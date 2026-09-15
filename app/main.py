@@ -132,12 +132,10 @@ def mongodb_node_service(node: str, action: str = Form(...), actor: str = Form('
     topology = state.get('topology', {})
     if not target or not target['ssh'] or target['service'] not in ('inactive', 'failed'):
         raise HTTPException(409, 'El nodo debe estar accesible por SSH y mongod detenido o fallido.')
-    # Un PRIMARY confirmado permite recuperar manualmente la mayoría iniciando un
-    # miembro detenido. No exigimos mayoría aquí: con dos miembros apagados sería
-    # imposible iniciar el primero. La operación sigue siendo explícita y no
-    # ejecuta reconfiguración, restart ni ninguna corrección automática.
-    if not topology.get('primary'):
-        raise HTTPException(409, 'Se requiere un PRIMARY confirmado antes de iniciar un miembro.')
+    # Cuando dos miembros están detenidos, MongoDB puede retirar el PRIMARY al
+    # perder mayoría. Aun así, iniciar manualmente un miembro configurado es la
+    # acción no destructiva necesaria para recuperar el quórum. Esta ruta nunca
+    # hace restart, stepdown, reconfiguración ni inicia nada automáticamente.
     try:
         ok, detail = start_mongod(node, root_password)
     except MongoSSHAuthenticationError:
