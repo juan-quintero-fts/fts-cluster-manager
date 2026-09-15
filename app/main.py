@@ -53,6 +53,9 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
     maria_up = [n for n in nodes if n['mariadb'] == 'active']
     maria_down_accessible = [n for n in nodes if n['ssh'] and n['mariadb'] in ('inactive', 'failed')]
     primary_nodes = [n for n in maria_up if n['cluster'] == 'Primary']
+    # Un único MariaDB activo sin Primary Component no puede aceptar escrituras
+    # de forma segura. Se expone como advertencia visual, sin tomar acciones.
+    single_node_read_only = len(maria_up) == 1 and not primary_nodes
     all_mariadb_down = len(ssh_up) > 0 and len(maria_down_accessible) == len(ssh_up)
     can_join_nodes = len(primary_nodes) > 0 and len(maria_down_accessible) > 0
 
@@ -68,6 +71,7 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
         maria_down_accessible=maria_down_accessible,
         all_mariadb_down=all_mariadb_down,
         can_join_nodes=can_join_nodes,
+        single_node_read_only=single_node_read_only,
         positions=positions,
         best=best,
         uuid_warning=uuid_warning,
@@ -103,6 +107,7 @@ def api_status():
         'ssh_up_count': len(ssh_up),
         'maria_up_count': len(maria_up),
         'has_primary': len(primary_nodes) > 0,
+        'single_node_read_only': len(maria_up) == 1 and not primary_nodes,
         'nodes': nodes,
     })
 

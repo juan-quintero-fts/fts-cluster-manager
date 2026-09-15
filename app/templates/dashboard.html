@@ -4,6 +4,13 @@
   <strong>Control manual:</strong> el monitoreo usa las credenciales SSH configuradas para <code>{{ ssh_user }}</code>. Ninguna acción correctiva es automática. Cada operación administrativa solicita nuevamente la contraseña de <code>{{ root_ssh_user }}</code>.
 </section>
 
+{% if single_node_read_only %}
+<section class="feedback failure" id="galera-read-only-alert" role="alert">
+  <strong>Modo de contingencia: un único nodo sin Primary Component.</strong>
+  <p>Galera no tiene un PRIMARY confirmado. No realice escrituras ni intente recuperación automática: use únicamente lecturas en el nodo disponible hasta recuperar quórum o completar manualmente el procedimiento de recuperación.</p>
+</section>
+{% endif %}
+
 {% if feedback %}
 {% if feedback.event == 'auth_failed' %}
 <div class="modal-backdrop" id="auth-modal" role="presentation">
