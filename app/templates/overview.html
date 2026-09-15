@@ -1,0 +1,27 @@
+{% extends 'base.html' %}
+{% block content %}
+<section class="hero infrastructure-hero">
+  <div><h1>Resumen de infraestructura</h1><p>Estado consolidado de MariaDB Galera y MongoDB Replica Set.</p><small>El monitoreo es de solo lectura; las acciones se realizan dentro de cada módulo.</small></div>
+  <div class="hero-tools"><span class="pill">MONITOREO</span></div>
+</section>
+
+<section class="overview-services" aria-label="Servicios de infraestructura">
+  <a class="service-overview galera {{ level }}" href="/galera">
+    <div class="service-overview-head"><span>MariaDB Galera</span><strong>{{ level|upper }}</strong></div>
+    <div class="service-overview-value">{{ maria_up_count }} <small>/ {{ expected }} nodos</small></div>
+    <dl><dt>Primary</dt><dd>{{ primary_nodes[0].host if primary_nodes else 'N/A' }}</dd><dt>Estado</dt><dd>{{ summary }}</dd></dl>
+    <span class="service-overview-link">Ver detalle de Galera →</span>
+  </a>
+
+  <a class="service-overview mongo {{ mongo.level|lower }}" href="/mongodb">
+    <div class="service-overview-head"><span>MongoDB Replica Set</span><strong>{{ mongo.level }}</strong></div>
+    {% if mongo.enabled %}
+    <div class="service-overview-value">{{ mongo.nodes|selectattr('ssh')|list|length }} <small>/ {{ mongo.topology.member_count|default(mongo.nodes|length) }} miembros</small></div>
+    <dl><dt>Replica Set</dt><dd>{{ mongo.topology.replica_set|default('N/A') }}</dd><dt>Primary</dt><dd>{{ mongo.topology.primary|default('N/A') }}</dd><dt>Majority</dt><dd>{{ mongo.topology.majority|default('N/A') }}</dd><dt>Write concern</dt><dd>{{ mongo.topology.defaultWriteConcern|default('N/A') }}</dd></dl>
+    <span class="service-overview-link">Ver detalle de MongoDB →</span>
+    {% else %}
+    <div class="service-overview-value">No habilitado</div><p>Configure <code>MONGO_ENABLED=true</code> para activarlo.</p><span class="service-overview-link">Abrir configuración MongoDB →</span>
+    {% endif %}
+  </a>
+</section>
+{% endblock %}

@@ -76,7 +76,13 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
 
 
 @app.get('/', response_class=HTMLResponse)
-def dashboard(request: Request, event: str = '', host: str = '', ok: str = ''):
+def dashboard(request: Request):
+    """Compact infrastructure overview; operational detail lives in its module."""
+    return templates.TemplateResponse('overview.html', dashboard_context(request))
+
+
+@app.get('/galera', response_class=HTMLResponse)
+def galera_dashboard(request: Request, event: str = '', host: str = '', ok: str = ''):
     feedback = None
     if event and host:
         feedback = {'event': event, 'host': host, 'ok': ok == '1'}
@@ -199,7 +205,7 @@ def mongodb_set_majority(node: str = Form(...), confirm: str = Form(...), actor:
 @app.get('/recovery')
 def recovery_redirect():
     # La recuperación quedó integrada al Dashboard.
-    return RedirectResponse('/#recovery-panel', status_code=303)
+    return RedirectResponse('/galera#recovery-panel', status_code=303)
 
 
 @app.post('/recovery/analyze', response_class=HTMLResponse)
@@ -278,7 +284,7 @@ def node_service(
     except SSHAuthenticationError:
         log(actor, host, f'mariadb:{action}', False, 'Autenticación SSH rechazada.')
         query = urlencode({'event': 'auth_failed', 'host': host, 'ok': '0'})
-        return RedirectResponse(f'/?{query}', status_code=303)
+        return RedirectResponse(f'/galera?{query}', status_code=303)
 
     # Validación posterior de estado. No ejecuta ninguna acción adicional.
     after = inspect_node(host)
@@ -294,7 +300,7 @@ def node_service(
     log(actor, host, f'mariadb:{action}', action_ok, detail)
 
     query = urlencode({'event': action, 'host': host, 'ok': '1' if action_ok else '0'})
-    return RedirectResponse(f'/?{query}', status_code=303)
+    return RedirectResponse(f'/galera?{query}', status_code=303)
 
 
 @app.post('/recovery/bootstrap/{host}')
@@ -332,7 +338,7 @@ def do_bootstrap(
     except SSHAuthenticationError:
         log(actor, host, 'galera:bootstrap', False, 'Autenticación SSH rechazada.')
         query = urlencode({'event': 'auth_failed', 'host': host, 'ok': '0'})
-        return RedirectResponse(f'/?{query}', status_code=303)
+        return RedirectResponse(f'/galera?{query}', status_code=303)
 
     # Validar que el nodo quedó realmente como Primary y listo para operar.
     after = inspect_node(host)
@@ -353,7 +359,7 @@ def do_bootstrap(
     log(actor, host, 'galera:bootstrap', bootstrap_ok, detail)
 
     query = urlencode({'event': 'bootstrap', 'host': host, 'ok': '1' if bootstrap_ok else '0'})
-    return RedirectResponse(f'/?{query}', status_code=303)
+    return RedirectResponse(f'/galera?{query}', status_code=303)
 
 
 @app.get('/audit', response_class=HTMLResponse)

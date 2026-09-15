@@ -16,7 +16,7 @@
       <p class="menu-label">Monitoreo</p>
       <nav class="side-nav">
         <a class="nav-item {{ 'active' if request.url.path == '/' else '' }}" href="/">▦ <span>Dashboard</span></a>
-        <a class="nav-item {{ 'active' if request.url.path == '/' else '' }}" href="/#galera">◉ <span>MariaDB Galera</span></a>
+        <a class="nav-item {{ 'active' if request.url.path == '/galera' else '' }}" href="/galera">◉ <span>MariaDB Galera</span></a>
         <a class="nav-item {{ 'active' if request.url.path == '/mongodb' else '' }}" href="/mongodb">◈ <span>MongoDB Replica Set</span></a>
         <a class="nav-item {{ 'active' if request.url.path == '/audit' else '' }}" href="/audit">◷ <span>Auditoría</span></a>
       </nav>
