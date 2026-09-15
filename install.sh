@@ -17,7 +17,9 @@ ask_yn(){
 }
 
 install_systemd_unit(){
-  local service_name="${APP_NAME}.service" service_file="${ROOT_DIR}/${service_name}"
+  local service_name service_file
+  service_name="${APP_NAME}.service"
+  service_file="${ROOT_DIR}/${service_name}"
   local engine_bin unit_after
   if [[ "$engine" == "docker" ]]; then
     engine_bin="$(command -v docker)"
