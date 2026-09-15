@@ -4,6 +4,11 @@
   <strong>Control manual:</strong> el monitoreo usa las credenciales SSH configuradas para <code>{{ ssh_user }}</code>. Ninguna acción correctiva es automática. Cada operación administrativa solicita nuevamente la contraseña de <code>{{ root_ssh_user }}</code>.
 </section>
 
+<section class="infrastructure-overview" aria-label="Resumen de infraestructura">
+  <a class="infrastructure-card" id="galera" href="#node-grid"><span>MariaDB Galera</span><strong>{{ level|upper }}</strong><small>Nodos {{ maria_up_count }}/{{ expected }} · Primary {{ primary_nodes[0].host if primary_nodes else 'N/A' }}</small></a>
+  <a class="infrastructure-card mongo {{ mongo.level|lower }}" href="/mongodb"><span>MongoDB Replica Set</span><strong>{{ mongo.level }}</strong>{% if mongo.enabled %}<small>rs {{ mongo.topology.replica_set|default('N/A') }} · Primary {{ mongo.topology.primary|default('N/A') }} · Miembros {{ mongo.nodes|selectattr('ssh')|list|length }}/{{ mongo.nodes|length }} · Majority {{ mongo.topology.majority|default('N/A') }} · WC {{ mongo.topology.defaultWriteConcern|default('N/A') }}</small>{% else %}<small>Configure MONGO_ENABLED para habilitarlo</small>{% endif %}</a>
+</section>
+
 {% if feedback %}
 {% if feedback.event == 'auth_failed' %}
 <div class="modal-backdrop" id="auth-modal" role="presentation">

@@ -211,3 +211,47 @@ docker compose up -d --build
 ```
 
 Si el navegador continúa ejecutando una versión anterior del JavaScript, utiliza `Ctrl+F5`. Errores como `Not Found` o `There was an error parsing the body` después de una actualización pueden indicar que el navegador conserva recursos anteriores; revisa primero que el contenedor se haya reconstruido y fuerza la recarga de caché.
+
+## MongoDB Replica Set
+
+La vista **MongoDB Replica Set** monitoriza `rs0` mediante SSH: ejecuta `mongosh` en `127.0.0.1:27017` de cada servidor y usa respuestas JSON. El contenedor no instala un cliente MongoDB. Un fallo en un nodo se presenta como información parcial y no afecta Galera.
+
+```mermaid
+flowchart TD
+    P[mongodb1 · PRIMARY · priority 2] --> S1[mongodb2 · SECONDARY · priority 1]
+    P --> S2[mongodb3 · SECONDARY · priority 1]
+    W[Escritura] --> P
+    P --> A[Confirmación w: majority: 2 de 3]
+    S1 --> A
+```
+
+Todos los miembros guardan datos y votan; no hay árbitro. MongoDB elige automáticamente un PRIMARY cuando el anterior falla. La interfaz sólo visualiza esa elección: nunca cambia prioridades ni ejecuta `rs.reconfig`.
+
+### Mayoría y write concern
+
+Con tres miembros con voto, la mayoría es **2/3**. Cuando `getDefaultRWConcern` informa `w: "majority"`, la tarjeta muestra **PROTEGIDO**. Si el valor no es majority aparece una advertencia; el operador puede configurarlo sólo en el PRIMARY, con mayoría disponible, escribiendo `CONFIGURAR MAJORITY` y proporcionando la contraseña root. La acción se audita y se vuelve a comprobar el valor.
+
+### Estados y lag
+
+- Verde: HEALTHY, miembros disponibles, PRIMARY único, SECONDARY y majority correctos.
+- Amarillo: DEGRADED o SYNCING; un miembro puede estar recuperándose.
+- Rojo: CRITICAL o DOWN; no hay mayoría, hay lag grave, ROLLBACK o no hay PRIMARY.
+- Azul: información y rol PRIMARY.
+
+El lag se calcula respecto al `optimeDate` del PRIMARY: 0–5 s es normal, 6–30 s es advertencia y más de 30 s es crítico.
+
+### Operaciones manuales
+
+**Levantar nodo** sólo aparece si SSH está disponible, `mongod` está `inactive`/`failed` y el Replica Set ya tiene PRIMARY operativo. Ejecuta únicamente `systemctl --no-block start mongod`; no reinicia ni altera configuración.
+
+**Cambiar PRIMARY de forma controlada** sólo aparece en el PRIMARY validado. Requiere tres miembros configurados, mayoría y un SECONDARY sano. El operador escribe `CAMBIAR PRIMARY`; MongoDB realiza la elección mediante stepdown, sin que la aplicación seleccione un nodo.
+
+### Conexiones
+
+Para aplicaciones use la URI del Replica Set mostrada en el panel, por ejemplo:
+
+```text
+mongodb://mongodb1:27017,mongodb2:27017,mongodb3:27017/easyroad?replicaSet=rs0
+```
+
+El driver descubre el PRIMARY y soporta failover. Las URI con `directConnection=true` sirven para inspeccionar un miembro particular y no son la conexión recomendada para alta disponibilidad. La interfaz no muestra contraseñas.

@@ -9,12 +9,14 @@ ANSI_ESCAPE_RE = re.compile(
     r'\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x1b\x07]*(?:\x07|\x1b\\))'
 )
 CONTROL_CHAR_RE = re.compile(r'[\x00-\x08\x0b-\x1f\x7f]')
+SECRET_RE = re.compile(r'(?i)(password|passwd|pwd|mongosh_password|mysql_pwd)\s*(?:=|:|\s)\s*([^\s,;]+)')
 
 
 def sanitize_detail(value):
     """Quita colores ANSI y controles, conservando saltos de línea y tabulaciones."""
     text = str(value or '')
-    return CONTROL_CHAR_RE.sub('', ANSI_ESCAPE_RE.sub('', text))
+    text = CONTROL_CHAR_RE.sub('', ANSI_ESCAPE_RE.sub('', text))
+    return SECRET_RE.sub(lambda m: f'{m.group(1)}=[REDACTED]', text)
 
 def init_db():
     os.makedirs(os.path.dirname(DB), exist_ok=True)

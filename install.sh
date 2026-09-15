@@ -17,7 +17,7 @@ ask_yn(){
 }
 
 say "==============================================="
-say "       INSTALADOR FTS GALERA MANAGER"
+say "       INSTALADOR FTS CLUSTER MANAGER"
 say "==============================================="
 say ""
 
@@ -106,6 +106,7 @@ say "- Acciones privilegiadas: root + contrasena solicitada en cada operacion."
 say "- La contrasena root no se almacena."
 say "- Ninguna accion correctiva se ejecuta automaticamente."
 say "- La imagen NO usa apt-get ni instala mariadb-client/openssh-client/ping."
+say "- MongoDB se consulta con mongosh existente en cada nodo remoto; no se instala en esta imagen."
 say ""
 
 if ! ask_yn "Desea construir e iniciar FTS Galera Manager ahora?"; then

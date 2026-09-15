@@ -11,16 +11,18 @@
     <aside class="sidebar" aria-label="Navegación principal">
       <a class="brand" href="/" aria-label="{{ app_name }}: ir al dashboard">
         <span class="brand-icon">DB</span>
-        <span class="brand-text"><strong>Cluster Manager</strong><small>MariaDB Galera</small></span>
+        <span class="brand-text"><strong>FTS Cluster Manager</strong><small>Galera + MongoDB</small></span>
       </a>
       <p class="menu-label">Monitoreo</p>
       <nav class="side-nav">
         <a class="nav-item {{ 'active' if request.url.path == '/' else '' }}" href="/">▦ <span>Dashboard</span></a>
+        <a class="nav-item {{ 'active' if request.url.path == '/' else '' }}" href="/#galera">◉ <span>MariaDB Galera</span></a>
+        <a class="nav-item {{ 'active' if request.url.path == '/mongodb' else '' }}" href="/mongodb">◈ <span>MongoDB Replica Set</span></a>
         <a class="nav-item {{ 'active' if request.url.path == '/audit' else '' }}" href="/audit">◷ <span>Auditoría</span></a>
       </nav>
       <p class="menu-label">Administración</p>
       <nav class="side-nav"><a class="nav-item {{ 'active' if request.url.path == '/help' else '' }}" href="/help">? <span>Ayuda y operaciones</span></a></nav>
-      <div class="sidebar-footer"><div class="server-info"><span>Entorno</span><strong>Producción · Galera Cluster</strong></div></div>
+      <div class="sidebar-footer"><div class="server-info"><span>Entorno</span><strong>Producción · Infraestructura</strong></div></div>
     </aside>
     <div class="app-main">
       <header class="topbar">

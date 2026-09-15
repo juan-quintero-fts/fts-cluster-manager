@@ -8,6 +8,9 @@ import re
 
 from .core import settings, inspect_node, classify, recover_position, service_action, bootstrap, SSHAuthenticationError
 from .audit import log, recent, init_db
+from .mongo_core import (mongo_settings, mongo_status, start_mongod, controlled_stepdown,
+                         set_majority_write_concern, MongoError, MongoSSHAuthenticationError)
+from .mongo_core import can_controlled_stepdown
 
 app = FastAPI(title=settings.app_name)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
@@ -24,6 +27,7 @@ def ctx(request, **extra):
         'nodes_cfg': settings.nodes,
         'monitor_interval': settings.monitor_interval,
         'auto_monitor': settings.auto_monitor,
+        'mongo_enabled': mongo_settings.enabled,
     }
     base.update(extra)
     return base
@@ -33,6 +37,14 @@ def get_cluster_state():
     nodes = [inspect_node(h) for h in settings.nodes]
     level, summary = classify(nodes)
     return nodes, level, summary
+
+
+def get_mongo_state():
+    """MongoDB failures are deliberately isolated from the Galera dashboard."""
+    try:
+        return mongo_status()
+    except Exception as exc:
+        return {'enabled': mongo_settings.enabled, 'level': 'DOWN', 'summary': f'Error consultando MongoDB: {exc}', 'nodes': [], 'topology': {}}
 
 
 def dashboard_context(request: Request, positions=None, best=None, uuid_warning=False, feedback=None):
@@ -59,7 +71,7 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
         positions=positions,
         best=best,
         uuid_warning=uuid_warning,
-        feedback=feedback,
+        feedback=feedback, mongo=get_mongo_state(),
     )
 
 
@@ -87,6 +99,97 @@ def api_status():
         'has_primary': len(primary_nodes) > 0,
         'nodes': nodes,
     })
+
+
+@app.get('/mongodb', response_class=HTMLResponse)
+def mongodb_page(request: Request):
+    return templates.TemplateResponse('mongodb.html', ctx(request, mongo=get_mongo_state(), mongo_interval=mongo_settings.monitor_interval))
+
+
+@app.get('/api/mongodb/status')
+def api_mongodb_status():
+    return JSONResponse(get_mongo_state())
+
+
+def _mongo_node_or_404(node):
+    if node not in mongo_settings.nodes:
+        raise HTTPException(404, 'Nodo MongoDB no configurado.')
+
+
+@app.post('/mongodb/node/{node}/service')
+def mongodb_node_service(node: str, action: str = Form(...), actor: str = Form('web'), root_password: str = Form(...)):
+    _mongo_node_or_404(node)
+    if action != 'start':
+        raise HTTPException(400, 'Sólo se permite iniciar mongod.')
+    state = get_mongo_state()
+    target = next((row for row in state.get('nodes', []) if row['name'] == node), None)
+    topology = state.get('topology', {})
+    if not target or not target['ssh'] or target['service'] not in ('inactive', 'failed'):
+        raise HTTPException(409, 'El nodo debe estar accesible por SSH y mongod detenido o fallido.')
+    if not topology.get('primary') or state['level'] in ('DOWN', 'CRITICAL'):
+        raise HTTPException(409, 'Se requiere un Replica Set operativo con PRIMARY antes de iniciar un miembro.')
+    try:
+        ok, detail = start_mongod(node, root_password)
+    except MongoSSHAuthenticationError:
+        log(actor, node, 'mongodb:start', False, 'Autenticación SSH rechazada.')
+        raise HTTPException(401, 'Autenticación SSH rechazada.')
+    except MongoError as exc:
+        log(actor, node, 'mongodb:start', False, str(exc))
+        raise HTTPException(400, str(exc))
+    after = get_mongo_state()
+    result = {'ok': ok, 'detail': detail, 'status': after}
+    log(actor, node, 'mongodb:start', ok, f'{detail}\nValidación posterior solicitada; estado={after.get("level")}')
+    return JSONResponse(result)
+
+
+def _safe_primary_state(node):
+    state = get_mongo_state()
+    rows, topology = state.get('nodes', []), state.get('topology', {})
+    target = next((row for row in rows if row['name'] == node), None)
+    if not target or target['role'] != 'PRIMARY' or target['health'] != 1:
+        raise HTTPException(409, 'La operación sólo está permitida en el PRIMARY confirmado.')
+    if not can_controlled_stepdown(rows, topology, node):
+        raise HTTPException(409, 'No se cumplen las condiciones seguras: mayoría y SECONDARY saludable requeridos.')
+    return state
+
+
+@app.post('/mongodb/stepdown/{node}')
+def mongodb_stepdown(node: str, confirm: str = Form(...), actor: str = Form('web'), root_password: str = Form(...)):
+    _mongo_node_or_404(node)
+    if confirm != 'CAMBIAR PRIMARY':
+        raise HTTPException(400, 'Debe escribir CAMBIAR PRIMARY.')
+    _safe_primary_state(node)
+    try:
+        ok, detail = controlled_stepdown(node, root_password)
+    except MongoSSHAuthenticationError:
+        log(actor, node, 'mongodb:stepdown', False, 'Autenticación SSH rechazada.')
+        raise HTTPException(401, 'Autenticación SSH rechazada.')
+    except MongoError as exc:
+        log(actor, node, 'mongodb:stepdown', False, str(exc))
+        raise HTTPException(400, str(exc))
+    after = get_mongo_state()
+    log(actor, node, 'mongodb:stepdown', ok, f'{detail}\nPRIMARY posterior={after.get("topology", {}).get("primary", "N/A")}')
+    return JSONResponse({'ok': ok, 'detail': detail, 'status': after})
+
+
+@app.post('/mongodb/write-concern/majority')
+def mongodb_set_majority(node: str = Form(...), confirm: str = Form(...), actor: str = Form('web'), root_password: str = Form(...)):
+    _mongo_node_or_404(node)
+    if confirm != 'CONFIGURAR MAJORITY':
+        raise HTTPException(400, 'Debe escribir CONFIGURAR MAJORITY.')
+    _safe_primary_state(node)
+    try:
+        ok, detail = set_majority_write_concern(node, root_password)
+    except MongoSSHAuthenticationError:
+        log(actor, node, 'mongodb:set-majority', False, 'Autenticación SSH rechazada.')
+        raise HTTPException(401, 'Autenticación SSH rechazada.')
+    except MongoError as exc:
+        log(actor, node, 'mongodb:set-majority', False, str(exc))
+        raise HTTPException(400, str(exc))
+    after = get_mongo_state()
+    verified = after.get('topology', {}).get('defaultWriteConcern') == 'majority'
+    log(actor, node, 'mongodb:set-majority', ok and verified, f'{detail}\nVerificación getDefaultRWConcern={after.get("topology", {}).get("defaultWriteConcern", "N/A")}')
+    return JSONResponse({'ok': ok and verified, 'detail': detail, 'status': after})
 
 
 @app.get('/recovery')
