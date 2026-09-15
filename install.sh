@@ -16,6 +16,71 @@ ask_yn(){
   done
 }
 
+install_systemd_unit(){
+  local service_name="${APP_NAME}.service" service_file="${ROOT_DIR}/${service_name}"
+  local engine_bin unit_after
+  if [[ "$engine" == "docker" ]]; then
+    engine_bin="$(command -v docker)"
+    unit_after="docker.service"
+  else
+    engine_bin="$(command -v podman)"
+    unit_after="network-online.target"
+  fi
+
+  cat > "$service_file" <<EOF
+[Unit]
+Description=FTS Cluster Manager container
+Wants=network-online.target
+After=network-online.target ${unit_after}
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=${engine_bin} start ${APP_NAME}
+ExecStop=${engine_bin} stop --time 30 ${APP_NAME}
+TimeoutStartSec=60
+TimeoutStopSec=60
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+EOF
+  say "Unidad generada: ${service_file}"
+
+  if ! ask_yn "Desea instalar la unidad en /etc/systemd/system"; then
+    say "La unidad quedó generada localmente. No se instaló ni se habilitó."
+    return
+  fi
+
+  if [[ "${EUID}" -eq 0 ]]; then
+    install -m 0644 "$service_file" "/etc/systemd/system/${service_name}"
+    systemctl daemon-reload
+  elif command -v sudo >/dev/null 2>&1; then
+    sudo install -m 0644 "$service_file" "/etc/systemd/system/${service_name}"
+    sudo systemctl daemon-reload
+  else
+    say "No hay privilegios para instalar la unidad. Copia ${service_file} a /etc/systemd/system/ y ejecuta systemctl daemon-reload."
+    return
+  fi
+
+  say "Unidad instalada. No se ejecutó systemctl enable: HA conserva el control de arranque."
+  if [[ "$engine" == "docker" ]]; then
+    if ! docker container inspect "$APP_NAME" >/dev/null 2>&1; then
+      say "El contenedor todavía no existe; la unidad queda instalada y detenida para HA."
+      return
+    fi
+  elif ! podman container exists "$APP_NAME" >/dev/null 2>&1; then
+    say "El contenedor todavía no existe; la unidad queda instalada y detenida para HA."
+    return
+  fi
+  if ask_yn "Desea iniciar la unidad ahora (sin habilitarla al arranque)"; then
+    if [[ "${EUID}" -eq 0 ]]; then systemctl start "$service_name"; else sudo systemctl start "$service_name"; fi
+    say "Unidad iniciada manualmente. Sigue sin estar habilitada."
+  else
+    say "Unidad instalada pero detenida; HA puede gestionarla cuando corresponda."
+  fi
+}
+
 say "==============================================="
 say "       INSTALADOR FTS CLUSTER MANAGER"
 say "==============================================="
@@ -109,19 +174,21 @@ say "- La imagen NO usa apt-get ni instala mariadb-client/openssh-client/ping."
 say "- MongoDB se consulta con mongosh existente en cada nodo remoto; no se instala en esta imagen."
 say ""
 
-if ! ask_yn "Desea construir e iniciar FTS Galera Manager ahora?"; then
-  say "Instalacion preparada. El contenedor no fue iniciado."
-  exit 0
+build_and_start=0
+if ask_yn "Desea construir e iniciar FTS Galera Manager ahora?"; then
+  build_and_start=1
+else
+  say "No se construirá ni iniciará el contenedor ahora."
 fi
 
-if [[ "$engine" == "docker" ]]; then
+if [[ "$build_and_start" -eq 1 && "$engine" == "docker" ]]; then
   if ! docker compose version >/dev/null 2>&1; then
     say "ERROR: Docker Compose no esta disponible."
     exit 1
   fi
   docker compose up -d --build
   docker compose ps || true
-else
+elif [[ "$build_and_start" -eq 1 ]]; then
   if podman container exists "$APP_NAME" >/dev/null 2>&1; then
     say "Ya existe el contenedor $APP_NAME."
     if ask_yn "Desea reemplazarlo?"; then
@@ -146,13 +213,17 @@ else
   fi
   podman run -d \
     --name "$APP_NAME" \
-    --restart=always \
+    --restart=no \
     -p "${APP_PORT}:8080" \
     --env-file .env \
     "${podman_volumes[@]}" \
     "$IMAGE_NAME"
 
   podman ps --filter "name=$APP_NAME" || true
+fi
+
+if ask_yn "Desea generar la unidad systemd para FTS Cluster Manager"; then
+  install_systemd_unit
 fi
 
 server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
