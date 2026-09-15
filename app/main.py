@@ -6,7 +6,7 @@ from urllib.parse import urlencode
 import markdown
 import re
 
-from .core import settings, inspect_node, classify, recover_position, service_action, bootstrap, SSHAuthenticationError
+from .core import settings, inspect_node, classify, recover_position, service_action, bootstrap, promote_single_nonprimary, SSHAuthenticationError
 from .audit import log, recent, init_db
 from .mongo_core import (mongo_settings, mongo_status, start_mongod, controlled_stepdown,
                          set_majority_write_concern, MongoError, MongoSSHAuthenticationError)
@@ -362,6 +362,35 @@ def do_bootstrap(
     log(actor, host, 'galera:bootstrap', bootstrap_ok, detail)
 
     query = urlencode({'event': 'bootstrap', 'host': host, 'ok': '1' if bootstrap_ok else '0'})
+    return RedirectResponse(f'/galera?{query}', status_code=303)
+
+
+@app.post('/recovery/promote/{host}')
+def promote_single_node(
+    host: str,
+    confirm: str = Form(...),
+    actor: str = Form('web'),
+    root_password: str = Form(...),
+):
+    if host not in settings.nodes:
+        raise HTTPException(404)
+    if confirm != 'PROMOVER PRIMARY':
+        raise HTTPException(400, 'Debe escribir PROMOVER PRIMARY')
+    nodes, _, _ = get_cluster_state()
+    active = [node for node in nodes if node['mariadb'] == 'active']
+    target = next((node for node in active if node['host'] == host), None)
+    if len(active) != 1 or not target or not target['ssh'] or target['cluster'] == 'Primary':
+        raise HTTPException(409, 'La promoción sólo permite un único MariaDB activo, accesible y sin Primary Component.')
+    try:
+        ok, detail = promote_single_nonprimary(host, root_password)
+    except SSHAuthenticationError:
+        log(actor, host, 'galera:promote-primary', False, 'Autenticación SSH rechazada.')
+        raise HTTPException(401, 'Autenticación SSH rechazada.')
+    after = inspect_node(host)
+    verified = ok and after['mariadb'] == 'active' and after['cluster'] == 'Primary'
+    log(actor, host, 'galera:promote-primary', verified,
+        f'{detail}\nVALIDACIÓN POSTERIOR: MariaDB={after["mariadb"]}, Cluster={after["cluster"]}, State={after["local_state"]}')
+    query = urlencode({'event': 'bootstrap', 'host': host, 'ok': '1' if verified else '0'})
     return RedirectResponse(f'/galera?{query}', status_code=303)
 
 

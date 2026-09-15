@@ -245,3 +245,16 @@ galera_new_cluster'''
     with root_remote(host, root_password) as r:
         code, out, err = r.run(command, timeout=120)
         return code == 0, out or err
+
+
+def promote_single_nonprimary(host: str, root_password: str):
+    """Manual recovery for the sole running node without Primary Component.
+
+    This is intentionally never called by monitoring. The HTTP route validates
+    that it is the only running MariaDB and requires a typed confirmation.
+    """
+    with root_remote(host, root_password) as r:
+        code, out, err = r.run('systemctl stop mariadb.service', timeout=90)
+        if code != 0:
+            return False, out or err or 'No fue posible detener MariaDB para la promoción manual.'
+    return bootstrap(host, root_password)

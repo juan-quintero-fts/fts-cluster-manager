@@ -206,6 +206,19 @@
     </div>
   </div>
 
+  {% elif single_node_read_only %}
+  {% set survivor = nodes|selectattr('mariadb', 'equalto', 'active')|list|first %}
+  <div class="scenario-box scenario-recovery">
+    <h3>Único nodo activo sin Primary Component</h3>
+    <p><strong>{{ survivor.host }}</strong> es el único MariaDB activo, pero no pertenece a un Primary Component. No se pueden incorporar los nodos detenidos todavía.</p>
+    <p>Si confirmas que este nodo contiene el estado autorizado, puedes promoverlo manualmente. La operación detendrá MariaDB, preparará <code>safe_to_bootstrap</code> y ejecutará <code>galera_new_cluster</code> sólo en este nodo.</p>
+    <form method="post" action="/recovery/promote/{{ survivor.host }}" class="bootstrap-form async-dashboard-form" onsubmit="return confirmPromotePrimary('{{ survivor.host }}');">
+      <input name="confirm" placeholder="Escriba PROMOVER PRIMARY" autocomplete="off" required>
+      <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
+      <button class="danger">Promover a Primary manualmente</button>
+    </form>
+  </div>
+
   {% elif maria_up_count > 0 %}
   <div class="scenario-box scenario-warning">
     <h3>MariaDB está activo, pero no se detectó Primary</h3>
@@ -332,6 +345,10 @@ function confirmStart(host) {
 function confirmBootstrap(host, seqno, recommended) {
   const note = recommended ? '\n\nEste es el nodo con el SEQNO más alto entre los estados comparables.' : '\n\nATENCIÓN: este nodo NO es el candidato con mayor SEQNO mostrado.';
   return window.confirm(`¿Está seguro que desea dejar ${host} como nuevo Primary?\nSEQNO: ${seqno}${note}\n\nSe modificará safe_to_bootstrap y se ejecutará galera_new_cluster sólo en este nodo.`);
+}
+
+function confirmPromotePrimary(host) {
+  return window.confirm(`¿Está seguro que desea promover ${host} a Primary?\n\nMariaDB se detendrá y se ejecutará galera_new_cluster sólo en este nodo. Confirma que es el único nodo autorizado antes de continuar.`);
 }
 
 function showRemainingNodes() {
