@@ -6,6 +6,23 @@ FTS Cluster Manager permite **monitorear y operar manualmente** un clúster Mari
 
 La aplicación nunca inicia, detiene, reinicia ni recupera nodos automáticamente. El monitoreo periódico es únicamente de lectura.
 
+## Pacemaker, Corosync y QDevice
+
+La opción **Pacemaker y QDevice** es exclusivamente de monitoreo. Consulta por SSH los servicios `pacemaker`, `corosync`, `corosync-qdevice`, `corosync-qnetd` y `pcsd`, además de `pcs status --full`, `pcs quorum status`, `pcs quorum device status` y el voto configurado de QDevice.
+
+La vista diferencia el **DC de Pacemaker** del nodo donde se ejecuta cada recurso: el DC coordina el clúster, pero no necesariamente aloja todos los recursos. No permite iniciar servicios, alterar votos, forzar quorum ni ejecutar recuperación.
+
+El usuario SSH de monitoreo debe poder ejecutar esas consultas sin interacción; si `pcs` restringe la lectura por permisos, la vista conserva el estado de los servicios y muestra el error de consulta sin intentar elevar privilegios.
+
+Para habilitarla, configure en `.env`:
+
+```text
+PACEMAKER_ENABLED=true
+PACEMAKER_NODES=SERVER1=172.16.0.1,SERVER2=172.16.0.2
+QNETD_NAME=server3
+QNETD_HOST=172.16.0.9
+```
+
 ## Credenciales y control
 
 - **Monitoreo:** `ftsuser` mediante `SSH_PASSWORD` o llave SSH. Cuando `SSH_PASSWORD` tiene valor, la contraseña tiene prioridad; si se deja vacío, se usa `SSH_KEY_PATH`.

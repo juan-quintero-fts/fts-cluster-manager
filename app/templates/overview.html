@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 {% block content %}
 <section class="hero infrastructure-hero">
-  <div><h1>Resumen de infraestructura</h1><p>Estado consolidado de MariaDB Galera y MongoDB Replica Set.</p><small>El monitoreo es de solo lectura; las acciones se realizan dentro de cada módulo.</small></div>
+  <div><h1>Resumen de infraestructura</h1><p>Estado consolidado de MariaDB Galera, MongoDB Replica Set y Pacemaker/Corosync.</p><small>El monitoreo es de solo lectura; las acciones se realizan dentro de cada módulo.</small></div>
   <div class="hero-tools"><span class="pill">MONITOREO</span></div>
 </section>
 
@@ -21,6 +21,17 @@
     <span class="service-overview-link">Ver detalle de MongoDB →</span>
     {% else %}
     <div class="service-overview-value">No habilitado</div><p>Configure <code>MONGO_ENABLED=true</code> para activarlo.</p><span class="service-overview-link">Abrir configuración MongoDB →</span>
+    {% endif %}
+  </a>
+
+  <a class="service-overview pacemaker {{ pacemaker.level|lower }}" href="/pacemaker">
+    <div class="service-overview-head"><span>Pacemaker · Corosync · QDevice</span><strong>{{ pacemaker.level }}</strong></div>
+    {% if pacemaker.enabled %}
+    <div class="service-overview-value">{{ pacemaker.details.quorum.quorate }} <small>quorum</small></div>
+    <dl><dt>DC Pacemaker</dt><dd>{{ pacemaker.details.pcs.dc }}</dd><dt>QDevice</dt><dd>{{ pacemaker.details.qdevice.state }}</dd><dt>QNetd</dt><dd>{{ pacemaker.qnetd.qnetd }}</dd></dl>
+    <span class="service-overview-link">Ver estado del clúster →</span>
+    {% else %}
+    <div class="service-overview-value">No habilitado</div><p>Configure <code>PACEMAKER_ENABLED=true</code> para activarlo.</p><span class="service-overview-link">Abrir configuración Pacemaker →</span>
     {% endif %}
   </a>
 </section>

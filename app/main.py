@@ -11,6 +11,7 @@ from .audit import log, recent, init_db
 from .mongo_core import (mongo_settings, mongo_status, start_mongod, controlled_stepdown,
                          set_majority_write_concern, MongoError, MongoSSHAuthenticationError)
 from .mongo_core import can_controlled_stepdown
+from .pacemaker_core import pacemaker_settings, pacemaker_status
 
 app = FastAPI(title=settings.app_name)
 app.mount('/static', StaticFiles(directory='app/static'), name='static')
@@ -75,7 +76,7 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
         positions=positions,
         best=best,
         uuid_warning=uuid_warning,
-        feedback=feedback, mongo=get_mongo_state(),
+        feedback=feedback, mongo=get_mongo_state(), pacemaker=pacemaker_status(),
     )
 
 
@@ -120,6 +121,20 @@ def mongodb_page(request: Request):
 @app.get('/api/mongodb/status')
 def api_mongodb_status():
     return JSONResponse(get_mongo_state())
+
+
+@app.get('/pacemaker', response_class=HTMLResponse)
+def pacemaker_page(request: Request):
+    return templates.TemplateResponse(
+        'pacemaker.html',
+        ctx(request, pacemaker=pacemaker_status(), pacemaker_interval=pacemaker_settings.monitor_interval),
+    )
+
+
+@app.get('/api/pacemaker/status')
+def api_pacemaker_status():
+    """Endpoint strictly limited to read-only Pacemaker/Corosync monitoring."""
+    return JSONResponse(pacemaker_status())
 
 
 def _mongo_node_or_404(node):
