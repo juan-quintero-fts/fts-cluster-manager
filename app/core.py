@@ -6,7 +6,7 @@ import paramiko
 
 @dataclass
 class Settings:
-    app_name: str = os.getenv('APP_NAME', 'FTS Galera Manager')
+    app_name: str = os.getenv('APP_NAME', 'FTS Cluster Manager')
     # Usuario operativo de solo lectura / monitoreo.
     ssh_user: str = os.getenv('SSH_USER', 'ftsuser')
     ssh_port: int = int(os.getenv('SSH_PORT', '22'))

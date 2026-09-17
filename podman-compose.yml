@@ -1,7 +1,7 @@
 services:
-  galera-manager:
+  cluster-manager:
     build: .
-    container_name: fts-galera-manager
+    container_name: fts-cluster-manager
     # HA controla el ciclo de vida; Podman no debe reiniciar el contenedor.
     restart: "no"
     env_file:

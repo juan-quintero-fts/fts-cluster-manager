@@ -1,8 +1,8 @@
-# FTS Galera Manager
+# FTS Cluster Manager
 
 ## Objetivo
 
-FTS Galera Manager permite **monitorear y operar manualmente** un clúster MariaDB Galera desde una sola interfaz web.
+FTS Cluster Manager permite **monitorear y operar manualmente** un clúster MariaDB Galera desde una sola interfaz web.
 
 La aplicación nunca inicia, detiene, reinicia ni recupera nodos automáticamente. El monitoreo periódico es únicamente de lectura.
 
@@ -176,7 +176,7 @@ Cada incorporación vuelve a solicitar contraseña root y vuelve a validar el es
 
 ## Operaciones que nunca son automáticas
 
-FTS Galera Manager no ejecuta acciones correctivas automáticamente. Las únicas acciones operativas expuestas en la interfaz son:
+FTS Cluster Manager no ejecuta acciones correctivas automáticamente. Las únicas acciones operativas expuestas en la interfaz son:
 
 ```text
 systemctl --no-block start mariadb.service # solicitar la incorporación

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_NAME="fts-galera-manager"
-IMAGE_NAME="fts-galera-manager:latest"
+APP_NAME="fts-cluster-manager"
+IMAGE_NAME="fts-cluster-manager:latest"
 APP_PORT="6060"
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT_DIR"
@@ -177,7 +177,7 @@ say "- MongoDB se consulta con mongosh existente en cada nodo remoto; no se inst
 say ""
 
 build_and_start=0
-if ask_yn "Desea construir e iniciar FTS Galera Manager ahora?"; then
+if ask_yn "Desea construir e iniciar FTS Cluster Manager ahora?"; then
   build_and_start=1
 else
   say "No se construirá ni iniciará el contenedor ahora."
