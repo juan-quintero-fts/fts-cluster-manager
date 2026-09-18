@@ -64,7 +64,39 @@ class ProcessRecoveryStateTests(unittest.TestCase):
             ok, _, _ = core.recover_mariadb_process('node1', 'secret')
         self.assertTrue(ok)
         self.assertNotIn('systemctl kill --kill-whom=all --signal=SIGKILL mariadb', remote.commands)
+        self.assertNotIn('systemctl --no-block stop mariadb', remote.commands)
         self.assertIn('systemctl reset-failed mariadb', remote.commands)
+
+    def test_live_blocked_process_is_stopped_before_kill_and_cleanup(self):
+        class Remote:
+            def __init__(self):
+                self.commands = []
+                self.replies = iter([
+                    (0, 'ActiveState=deactivating\nSubState=stop\nMainPID=42\nResult=success', ''),
+                    (0, '42 mariadbd', ''),
+                    (0, '', ''),
+                    (0, '42 mariadbd', ''),
+                    (0, '', ''),
+                    (0, '', ''),
+                    (0, '', ''),
+                    (0, 'ActiveState=inactive\nSubState=dead\nMainPID=0\nResult=success', ''),
+                    (0, '', ''),
+                ])
+            def __enter__(self): return self
+            def __exit__(self, *args): pass
+            def run(self, command, timeout=30):
+                self.commands.append(command)
+                return next(self.replies)
+
+        remote = Remote()
+        with patch.object(core, 'root_remote', return_value=remote):
+            ok, _, _ = core.recover_mariadb_process('node1', 'secret')
+        self.assertTrue(ok)
+        stop = remote.commands.index('systemctl --no-block stop mariadb')
+        kill = remote.commands.index('systemctl kill --kill-whom=all --signal=SIGKILL mariadb')
+        reset = remote.commands.index('systemctl reset-failed mariadb')
+        self.assertLess(stop, kill)
+        self.assertLess(kill, reset)
 
 
 class GaleraRecommendationTests(unittest.TestCase):

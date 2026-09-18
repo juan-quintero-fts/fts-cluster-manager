@@ -125,7 +125,7 @@
     {% if n.ssh and n.process_recovery == 'recover-process' %}
     <form method="post" action="/node/{{ n.host }}/process-recovery" class="async-dashboard-form" onsubmit="return confirmProcessRecovery('{{ n.host }}', '{{ n.active_state }}', '{{ n.sub_state }}', '{{ n.main_pid }}');">
       <input type="hidden" name="confirm" value="FORZAR RECUPERACION">
-      <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
+      <input type="password" name="root_password" placeholder="Contraseña root para detener MariaDB" autocomplete="current-password" required>
       <button class="danger">Recuperar proceso</button>
     </form>
     {% elif n.ssh and n.process_recovery == 'reset-failed' %}
@@ -272,7 +272,7 @@ function confirmStart(host) {
 }
 
 function confirmProcessRecovery(host, state, substate, pid) {
-  return window.confirm(`Recuperación forzada de MariaDB\n\nEl proceso MariaDB del nodo está bloqueado en:\nEstado: ${state}\nSubestado: ${substate}\nPID: ${pid}\n\nLa operación ejecutará SIGKILL sobre los procesos pertenecientes al servicio MariaDB y limpiará el estado fallido de systemd.\n\nNo iniciará MariaDB ni realizará automáticamente un bootstrap del clúster Galera.\n\n¿Forzar recuperación en ${host}?`);
+  return window.confirm(`Recuperación forzada de MariaDB\n\nEl proceso MariaDB del nodo está bloqueado en:\nEstado: ${state}\nSubestado: ${substate}\nPID: ${pid}\n\nCon la contraseña root se intentará primero detener MariaDB. Sólo si mariadbd continúa activo se ejecutará SIGKILL. Después se limpiará automáticamente el estado de systemd.\n\nNo iniciará MariaDB ni realizará automáticamente un bootstrap del clúster Galera.\n\n¿Recuperar proceso en ${host}?`);
 }
 
 function showRemainingNodes() {

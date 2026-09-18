@@ -203,12 +203,18 @@ def read_grastate(host: str):
 
 
 def recover_mariadb_process(host: str, root_password: str):
-    """Kill only a still-live stuck mariadbd, reset systemd, never start MariaDB."""
+    """Stop first, kill a remaining stuck mariadbd, then reset systemd; never start MariaDB."""
     with root_remote(host, root_password) as remote:
         before = inspect_mariadb_process(remote)
         state, _ = process_recovery_state(before)
         if state == 'recover-process':
-            remote.run('systemctl kill --kill-whom=all --signal=SIGKILL mariadb', timeout=30)
+            # Register the normal stop with systemd before forcing the process.
+            # --no-block prevents a blocked unit from preventing the subsequent
+            # process verification and SIGKILL fallback.
+            remote.run('systemctl --no-block stop mariadb', timeout=30)
+            _, processes, _ = remote.run('pgrep -a mariadbd 2>/dev/null || true')
+            if processes.strip():
+                remote.run('systemctl kill --kill-whom=all --signal=SIGKILL mariadb', timeout=30)
         _, processes, _ = remote.run('pgrep -a mariadbd 2>/dev/null || true')
         if processes.strip():
             return False, 'mariadbd continúa activo; no se limpió el estado systemd.', inspect_mariadb_process(remote)
