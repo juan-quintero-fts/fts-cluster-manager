@@ -7,7 +7,7 @@ import re
 import time
 from dataclasses import dataclass
 
-from .core import Remote, tcp_reachable
+from .core import Remote, settings, tcp_reachable
 
 
 def _bool(value: str) -> bool:
@@ -99,7 +99,7 @@ def _parse_qdevice(output: str):
 
 def inspect_pacemaker_node(node):
     row = {**node, 'ssh': False, 'pacemaker': 'unknown', 'corosync': 'unknown', 'qdevice': 'unknown', 'error': ''}
-    if not tcp_reachable(node['host']):
+    if not tcp_reachable(node['host'], settings.ssh_port):
         row['error'] = 'Puerto SSH no accesible'
         return row
     try:
@@ -116,7 +116,7 @@ def inspect_pacemaker_node(node):
 def inspect_qnetd():
     row = {'name': pacemaker_settings.qnetd_name, 'host': pacemaker_settings.qnetd_host,
            'ssh': False, 'qnetd': 'unknown', 'pcsd': 'unknown', 'error': ''}
-    if not row['host'] or not tcp_reachable(row['host']):
+    if not row['host'] or not tcp_reachable(row['host'], settings.ssh_port):
         row['error'] = 'Puerto SSH no accesible'
         return row
     try:
