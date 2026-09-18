@@ -161,109 +161,6 @@
   {% if galera_recovery.recovered %}<table class="recovery-table"><thead><tr><th>Nodo</th><th>UUID</th><th>SEQNO recuperado</th><th>Origen</th></tr></thead><tbody>{% for row in galera_recovery.recovered %}<tr><td>{{ row.host }}</td><td>{{ row.uuid }}</td><td>{{ row.seqno }}</td><td>{{ row.source }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 </section>
 
-<section id="recovery-panel" class="recovery-panel">
-  <div class="section-title">
-    <div>
-      <h2>Recuperación e incorporación de nodos</h2>
-      <p>Esta sección forma parte del Dashboard y cambia según el escenario detectado.</p>
-    </div>
-  </div>
-
-  {% if can_join_nodes %}
-  <div class="scenario-box scenario-primary">
-    <h3>Primary disponible: se pueden incorporar nodos faltantes</h3>
-    <p>Se detectó al menos un nodo con MariaDB activo y componente <strong>Primary</strong>. Los nodos accesibles con MariaDB detenido pueden levantarse manualmente, uno por uno.</p>
-    <div class="primary-list">
-      {% for p in primary_nodes %}<span class="status-chip">Primary: {{ p.host }} · {{ p.local_state }} · Size {{ p.size }}</span>{% endfor %}
-    </div>
-    <p><strong>No se levantará ningún nodo automáticamente.</strong> Usa los botones de cada tarjeta y confirma cada incorporación.</p>
-  </div>
-
-  {% elif all_mariadb_down %}
-  <div class="scenario-box scenario-recovery">
-    <h3>Todos los MariaDB accesibles están detenidos</h3>
-    <p>Interfaces SSH activas: <strong>{{ ssh_up_count }}/{{ expected }}</strong>. Para seleccionar el nuevo Primary primero ejecuta manualmente el diagnóstico de UUID/SEQNO.</p>
-
-    {% if ssh_up_count < expected %}
-    <div class="warning"><strong>Advertencia:</strong> sólo {{ ssh_up_count }} de {{ expected }} interfaces están accesibles. Puedes recuperar usando los nodos disponibles, incluso si sólo hay uno, pero no es posible comparar el estado con los nodos inaccesibles.</div>
-    {% endif %}
-
-    <form method="post" action="/recovery/analyze" class="diagnostic-form async-dashboard-form" onsubmit="return confirm('¿Está seguro que desea ejecutar wsrep-recover en los nodos accesibles con MariaDB detenido?');">
-      <label>Contraseña root
-        <input type="password" name="root_password" placeholder="Se usa sólo para este diagnóstico" autocomplete="current-password" required>
-      </label>
-      <button>Mostrar UUID / SEQNO</button>
-    </form>
-
-    {% if positions is not none %}
-      {% if uuid_warning %}
-      <div class="warning uuid-warning"><strong>UUID diferentes detectados.</strong> No es seguro elegir un nodo únicamente porque tenga el SEQNO numéricamente mayor. Revisa el historial antes de continuar.</div>
-      {% endif %}
-
-      <table class="recovery-table">
-        <thead><tr><th>Nodo</th><th>Hostname</th><th>UUID</th><th>SEQNO</th><th>Origen</th><th>Selección Primary</th></tr></thead>
-        <tbody>
-        {% for p in positions %}
-          {% set is_best = best is not none and p.seqno|string == best|string %}
-          <tr class="{{ 'recommended' if is_best else '' }}">
-            <td>{{ p.host }}</td>
-            <td>{{ p.hostname }}</td>
-            <td><code>{{ p.uuid }}</code></td>
-            <td>{{ p.seqno }} {% if is_best %}<strong class="recommended-label">★ Más actualizado</strong>{% endif %}</td>
-            <td>{{ p.source }}</td>
-            <td>
-              <details {% if is_best %}open{% endif %}>
-                <summary class="{{ 'recommended-summary' if is_best else '' }}">{{ 'Usar nodo recomendado como Primary' if is_best else 'Seleccionar este nodo como Primary' }}</summary>
-                <form method="post" action="/recovery/bootstrap/{{ p.host }}" class="bootstrap-form async-dashboard-form" onsubmit="return confirmBootstrap('{{ p.host }}', '{{ p.seqno }}', {{ 'true' if is_best else 'false' }});">
-                  <p>Se hará backup de <code>grastate.dat</code>, se establecerá <code>safe_to_bootstrap=1</code> y se ejecutará <code>galera_new_cluster</code> únicamente en este nodo.</p>
-                  <input name="confirm" placeholder="Escriba RECUPERAR" autocomplete="off" required>
-                  <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
-                  <button class="{{ 'recommended-button' if is_best else 'danger' }}">Dejar como Primary</button>
-                </form>
-              </details>
-            </td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    {% endif %}
-  </div>
-
-  {% elif primary_nodes|length > 0 %}
-  <div class="scenario-box scenario-primary">
-    <h3>Primary activo</h3>
-    <p>No hay nodos accesibles pendientes de incorporación. El monitoreo continuará actualizando individualmente el estado de cada nodo.</p>
-    <div class="primary-list">
-      {% for p in primary_nodes %}<span class="status-chip">Primary: {{ p.host }} · {{ p.local_state }} · Size {{ p.size }}</span>{% endfor %}
-    </div>
-  </div>
-
-  {% elif single_node_read_only %}
-  {% set survivor = nodes|selectattr('mariadb', 'equalto', 'active')|list|first %}
-  <div class="scenario-box scenario-recovery">
-    <h3>Único nodo activo sin Primary Component</h3>
-    <p><strong>{{ survivor.host }}</strong> es el único MariaDB activo, pero no pertenece a un Primary Component. No se pueden incorporar los nodos detenidos todavía.</p>
-    <p>Si confirmas que este nodo contiene el estado autorizado, puedes promoverlo manualmente. La operación detendrá MariaDB, preparará <code>safe_to_bootstrap</code> y ejecutará <code>galera_new_cluster</code> sólo en este nodo.</p>
-    <form method="post" action="/recovery/promote/{{ survivor.host }}" class="bootstrap-form async-dashboard-form" onsubmit="return confirmPromotePrimary('{{ survivor.host }}');">
-      <input name="confirm" placeholder="Escriba PROMOVER PRIMARY" autocomplete="off" required>
-      <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
-      <button class="danger">Promover a Primary manualmente</button>
-    </form>
-  </div>
-
-  {% elif maria_up_count > 0 %}
-  <div class="scenario-box scenario-warning">
-    <h3>MariaDB está activo, pero no se detectó Primary</h3>
-    <p>La aplicación no ejecutará una recuperación automática. Revisa los indicadores. Este estado no corresponde al flujo seguro de incorporación normal y la aplicación no ejecutará acciones sobre el clúster hasta que el operador intervenga mediante el flujo de recuperación.</p>
-  </div>
-
-  {% else %}
-  <div class="scenario-box scenario-offline">
-    <h3>No hay nodos suficientes para operar</h3>
-    <p>No se detectó ninguna interfaz SSH accesible. La aplicación sólo continuará monitoreando.</p>
-  </div>
-  {% endif %}
-</section>
 <style>
   .node-card.state-degraded:before { background: var(--warning); }
   .node-card.state-bad:before { background: var(--danger); }
@@ -378,15 +275,6 @@ function confirmProcessRecovery(host, state, substate, pid) {
   return window.confirm(`Recuperación forzada de MariaDB\n\nEl proceso MariaDB del nodo está bloqueado en:\nEstado: ${state}\nSubestado: ${substate}\nPID: ${pid}\n\nLa operación ejecutará SIGKILL sobre los procesos pertenecientes al servicio MariaDB y limpiará el estado fallido de systemd.\n\nNo iniciará MariaDB ni realizará automáticamente un bootstrap del clúster Galera.\n\n¿Forzar recuperación en ${host}?`);
 }
 
-function confirmBootstrap(host, seqno, recommended) {
-  const note = recommended ? '\n\nEste es el nodo con el SEQNO más alto entre los estados comparables.' : '\n\nATENCIÓN: este nodo NO es el candidato con mayor SEQNO mostrado.';
-  return window.confirm(`¿Está seguro que desea dejar ${host} como nuevo Primary?\nSEQNO: ${seqno}${note}\n\nSe modificará safe_to_bootstrap y se ejecutará galera_new_cluster sólo en este nodo.`);
-}
-
-function confirmPromotePrimary(host) {
-  return window.confirm(`¿Está seguro que desea promover ${host} a Primary?\n\nMariaDB se detendrá y se ejecutará galera_new_cluster sólo en este nodo. Confirma que es el único nodo autorizado antes de continuar.`);
-}
-
 function showRemainingNodes() {
   document.getElementById('node-grid').scrollIntoView({behavior: 'smooth'});
   document.querySelectorAll('.start-node-form').forEach(f => f.closest('.node-card').classList.add('attention-card'));
@@ -493,11 +381,6 @@ function applyDashboardDocument(sourceDocument, {updateFeedback = true} = {}) {
     if (sourceActions && targetActions) targetActions.innerHTML = sourceActions.innerHTML;
   }
 
-  const sourceRecovery = sourceDocument.getElementById('recovery-panel');
-  const targetRecovery = document.getElementById('recovery-panel');
-  if (sourceRecovery && targetRecovery) {
-    targetRecovery.replaceWith(document.importNode(sourceRecovery, true));
-  }
   const sourceGaleraRecovery = sourceDocument.getElementById('galera-recovery-analysis');
   const targetGaleraRecovery = document.getElementById('galera-recovery-analysis');
   if (sourceGaleraRecovery && targetGaleraRecovery) {

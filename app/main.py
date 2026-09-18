@@ -91,7 +91,7 @@ def galera_recovery_state(nodes, recovered=None):
     return {'nodes': rows, 'recommendation': recommendation, 'recovered': recovered}
 
 
-def dashboard_context(request: Request, positions=None, best=None, uuid_warning=False, feedback=None, recovery=None):
+def dashboard_context(request: Request, positions=None, feedback=None, recovery=None):
     nodes, level, summary = get_cluster_state()
     ssh_up = [n for n in nodes if n['ssh']]
     maria_up = [n for n in nodes if n['mariadb'] == 'active']
@@ -100,7 +100,6 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
     # Un único MariaDB activo sin Primary Component no puede aceptar escrituras
     # de forma segura. Se expone como advertencia visual, sin tomar acciones.
     single_node_read_only = len(maria_up) == 1 and not primary_nodes
-    all_mariadb_down = len(ssh_up) > 0 and len(maria_down_accessible) == len(ssh_up)
     can_join_nodes = len(primary_nodes) > 0 and len(maria_down_accessible) > 0
 
     return ctx(
@@ -113,12 +112,8 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
         maria_up_count=len(maria_up),
         primary_nodes=primary_nodes,
         maria_down_accessible=maria_down_accessible,
-        all_mariadb_down=all_mariadb_down,
         can_join_nodes=can_join_nodes,
         single_node_read_only=single_node_read_only,
-        positions=positions,
-        best=best,
-        uuid_warning=uuid_warning,
         feedback=feedback, mongo=get_mongo_state(), pacemaker=get_pacemaker_state(),
         galera_recovery=recovery or galera_recovery_state(nodes, positions),
     )
@@ -267,7 +262,7 @@ def mongodb_set_majority(node: str = Form(...), confirm: str = Form(...), actor:
 @app.get('/recovery')
 def recovery_redirect():
     # La recuperación quedó integrada al Dashboard.
-    return RedirectResponse('/galera#recovery-panel', status_code=303)
+    return RedirectResponse('/galera#galera-recovery-analysis', status_code=303)
 
 
 @app.post('/recovery/analyze', response_class=HTMLResponse)
@@ -291,18 +286,12 @@ def analyze_recovery(request: Request, root_password: str = Form(...)):
                     'seqno': 'N/A', 'source': str(e)
                 })
 
-    numeric = [p for p in positions if str(p['seqno']).lstrip('-').isdigit() and int(p['seqno']) >= 0]
-    best = max([int(p['seqno']) for p in numeric], default=None)
-    uuids = sorted({p['uuid'] for p in numeric if p['uuid'] != 'N/A'})
-    uuid_warning = len(uuids) > 1
-
     return templates.TemplateResponse(
         'dashboard.html',
         dashboard_context(
             request,
             positions=positions,
-            best=best,
-            uuid_warning=uuid_warning, recovery=galera_recovery_state(nodes, positions),
+            recovery=galera_recovery_state(nodes, positions),
         ),
     )
 
