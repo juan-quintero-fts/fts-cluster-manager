@@ -71,7 +71,21 @@ def _parse_pcs_status(output: str):
         match = re.search(r'^\s*\*\s+(.+?):\s+(?:Started|Master|Promoted)\s+(.+?)\s*$', line)
         if match:
             resources.append({'resource': match.group(1).strip(), 'node': match.group(2).strip()})
-    return {'dc': dc, 'online': sorted(set(online)), 'offline': sorted(set(offline)), 'resources': resources}
+    resource_nodes = sorted({resource['node'] for resource in resources})
+    if len(resource_nodes) == 1:
+        resource_owner = resource_nodes[0]
+    elif resource_nodes:
+        resource_owner = 'Distribuidos'
+    else:
+        resource_owner = 'N/A'
+    return {
+        'dc': dc,
+        'online': sorted(set(online)),
+        'offline': sorted(set(offline)),
+        'resources': resources,
+        'resource_owner': resource_owner,
+        'resource_nodes': resource_nodes,
+    }
 
 
 def _parse_quorum(output: str):

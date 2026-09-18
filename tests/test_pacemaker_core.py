@@ -24,6 +24,11 @@ class PacemakerParsingTests(unittest.TestCase):
         self.assertEqual(state['dc'], 'SERVER1')
         self.assertEqual(state['online'], ['SERVER1', 'SERVER2'])
         self.assertEqual(state['resources'], [{'resource': 'vip', 'node': 'SERVER2'}])
+        self.assertEqual(state['resource_owner'], 'SERVER2')
+
+    def test_marks_resources_as_distributed_when_they_are_not_on_one_node(self):
+        state = pacemaker_core._parse_pcs_status('''  * vip: Started SERVER1\n  * app: Started SERVER2\n''')
+        self.assertEqual(state['resource_owner'], 'Distribuidos')
 
     def test_parses_quorum_and_qdevice(self):
         quorum = pacemaker_core._parse_quorum('''Nodes: 2\nExpected votes: 3\nTotal votes: 3\nQuorum: 2\nQuorate: Yes\nFlags: Quorate Qdevice\n''')
