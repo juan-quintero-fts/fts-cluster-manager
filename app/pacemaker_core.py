@@ -14,6 +14,13 @@ def _bool(value: str) -> bool:
     return str(value or '').strip().lower() in {'1', 'true', 'yes', 'on'}
 
 
+def _positive_int(value: str, default: int) -> int:
+    try:
+        return max(5, int(value))
+    except (TypeError, ValueError):
+        return default
+
+
 def _named_nodes(value: str):
     nodes = []
     for item in (value or '').split(','):
@@ -26,7 +33,7 @@ def _named_nodes(value: str):
 @dataclass
 class PacemakerSettings:
     enabled: bool = _bool(os.getenv('PACEMAKER_ENABLED', 'false'))
-    monitor_interval: int = max(5, int(os.getenv('PACEMAKER_MONITOR_INTERVAL', '10')))
+    monitor_interval: int = _positive_int(os.getenv('PACEMAKER_MONITOR_INTERVAL', '10'), 10)
     qnetd_host: str = os.getenv('QNETD_HOST', '172.16.0.9').strip()
     qnetd_name: str = os.getenv('QNETD_NAME', 'server3').strip()
 

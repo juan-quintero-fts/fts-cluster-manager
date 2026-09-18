@@ -48,6 +48,28 @@ def get_mongo_state():
         return {'enabled': mongo_settings.enabled, 'level': 'DOWN', 'summary': f'Error consultando MongoDB: {exc}', 'nodes': [], 'topology': {}}
 
 
+def get_pacemaker_state():
+    """A Pacemaker/QDevice failure must never break the main Dashboard."""
+    try:
+        return pacemaker_status()
+    except Exception as exc:
+        return {
+            'enabled': pacemaker_settings.enabled,
+            'level': 'DOWN',
+            'summary': f'Error consultando Pacemaker/Corosync: {exc}',
+            'nodes': [],
+            'qnetd': {'name': pacemaker_settings.qnetd_name, 'host': pacemaker_settings.qnetd_host,
+                      'ssh': False, 'qnetd': 'unknown', 'pcsd': 'unknown', 'error': str(exc)},
+            'details': {
+                'pcs': {'dc': 'N/A', 'resources': []},
+                'quorum': {'quorate': 'N/A', 'total_votes': 'N/A', 'quorum': 'N/A'},
+                'qdevice': {'state': 'N/A', 'host': 'N/A', 'algorithm': 'N/A'},
+                'device_votes': 'N/A',
+                'no_quorum_policy': 'N/A',
+            },
+        }
+
+
 def dashboard_context(request: Request, positions=None, best=None, uuid_warning=False, feedback=None):
     nodes, level, summary = get_cluster_state()
     ssh_up = [n for n in nodes if n['ssh']]
@@ -76,7 +98,7 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
         positions=positions,
         best=best,
         uuid_warning=uuid_warning,
-        feedback=feedback, mongo=get_mongo_state(), pacemaker=pacemaker_status(),
+        feedback=feedback, mongo=get_mongo_state(), pacemaker=get_pacemaker_state(),
     )
 
 
@@ -127,14 +149,14 @@ def api_mongodb_status():
 def pacemaker_page(request: Request):
     return templates.TemplateResponse(
         'pacemaker.html',
-        ctx(request, pacemaker=pacemaker_status(), pacemaker_interval=pacemaker_settings.monitor_interval),
+        ctx(request, pacemaker=get_pacemaker_state(), pacemaker_interval=pacemaker_settings.monitor_interval),
     )
 
 
 @app.get('/api/pacemaker/status')
 def api_pacemaker_status():
     """Endpoint strictly limited to read-only Pacemaker/Corosync monitoring."""
-    return JSONResponse(pacemaker_status())
+    return JSONResponse(get_pacemaker_state())
 
 
 def _mongo_node_or_404(node):

@@ -9,6 +9,10 @@ from app import pacemaker_core
 
 
 class PacemakerParsingTests(unittest.TestCase):
+    def test_invalid_monitor_interval_uses_default(self):
+        self.assertEqual(pacemaker_core._positive_int('', 10), 10)
+        self.assertEqual(pacemaker_core._positive_int('2', 10), 5)
+
     def test_parses_dc_online_and_resource_location(self):
         state = pacemaker_core._parse_pcs_status('''Current DC: SERVER1 (version 2.0) - partition with quorum\nOnline: [ SERVER1 SERVER2 ]\n  * vip: Started SERVER2\n''')
         self.assertEqual(state['dc'], 'SERVER1')
