@@ -157,7 +157,33 @@
     <article class="card galera-recovery-card {{ 'recommended' if recommended else '' }}"><div class="card-head"><h2>{{ row.host }}</h2><span class="node-status {{ 'primary' if recommended else 'degraded' }}">{{ '★ RECOMENDADO' if recommended else row.mariadb }}</span></div><dl><dt>Estado MariaDB</dt><dd>{{ row.active_state }} / {{ row.sub_state }}</dd><dt>UUID</dt><dd><code>{{ row.uuid }}</code></dd><dt>SEQNO</dt><dd>{{ row.seqno }}</dd><dt>Safe to bootstrap</dt><dd>{{ 'SÍ' if row.safe_to_bootstrap == '1' else ('NO' if row.safe_to_bootstrap == '0' else 'N/A') }}</dd></dl>{% if row.error %}<p class="error">{{ row.error }}</p>{% endif %}</article>
   {% endfor %}
   </div>
-  <div class="write-protection"><div><h3>Nodo recomendado para iniciar primero</h3><p><strong>{{ galera_recovery.recommendation.host or 'Sin recomendación automática' }}</strong></p><p>{{ galera_recovery.recommendation.reason }}</p></div><div>{% if galera_recovery.recommendation.warning %}<p class="warning">Revisa las posiciones antes de ejecutar bootstrap.</p>{% endif %}<form method="post" action="/recovery/analyze" class="async-dashboard-form" onsubmit="return confirm('Se ejecutará la recuperación de posición sólo en nodos detenidos correctamente. No se iniciará MariaDB ni se hará bootstrap. ¿Continuar?');"><input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required><button>Analizar posiciones Galera</button></form>{% if galera_recovery.recommendation.host and not galera_recovery.recommendation.warning %}<form method="post" action="/recovery/bootstrap/{{ galera_recovery.recommendation.host }}" class="bootstrap-form async-dashboard-form" onsubmit="return confirmBootstrap('{{ galera_recovery.recommendation.host }}');"><input name="confirm" placeholder="Escriba RECUPERAR" autocomplete="off" required><input type="password" name="root_password" placeholder="Contraseña root para bootstrap" autocomplete="current-password" required><button class="danger">Levantar como nuevo Primary</button></form>{% endif %}</div></div>
+  <div class="galera-recommendation">
+    <h3>Nodo recomendado para iniciar primero</h3>
+    <p><strong>{{ galera_recovery.recommendation.host or 'Sin recomendación automática' }}</strong></p>
+    <p>{{ galera_recovery.recommendation.reason }}</p>
+    {% if galera_recovery.recommendation.warning %}<p class="warning">Revisa las posiciones antes de ejecutar bootstrap.</p>{% endif %}
+  </div>
+  <div class="galera-action-grid">
+    <section class="galera-action analysis-action">
+      <h3>1. Analizar posiciones Galera</h3>
+      <p>Consulta las posiciones recuperables de los nodos detenidos. No inicia MariaDB ni modifica el clúster.</p>
+      <form method="post" action="/recovery/analyze" class="async-dashboard-form" onsubmit="return confirm('Se ejecutará la recuperación de posición sólo en nodos detenidos correctamente. No se iniciará MariaDB ni se hará bootstrap. ¿Continuar?');">
+        <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
+        <button>Analizar posiciones Galera</button>
+      </form>
+    </section>
+    {% if galera_recovery.recommendation.host and not galera_recovery.recommendation.warning %}
+    <section class="galera-action bootstrap-action">
+      <h3>2. Levantar nuevo Primary</h3>
+      <p>Bootstrap manual de <strong>{{ galera_recovery.recommendation.host }}</strong>. Úsalo sólo después de revisar la recomendación.</p>
+      <form method="post" action="/recovery/bootstrap/{{ galera_recovery.recommendation.host }}" class="bootstrap-form async-dashboard-form" onsubmit="return confirmBootstrap('{{ galera_recovery.recommendation.host }}');">
+        <input name="confirm" placeholder="Escriba RECUPERAR" autocomplete="off" required>
+        <input type="password" name="root_password" placeholder="Contraseña root para bootstrap" autocomplete="current-password" required>
+        <button class="danger">Levantar como nuevo Primary</button>
+      </form>
+    </section>
+    {% endif %}
+  </div>
   {% if galera_recovery.recovered %}<table class="recovery-table"><thead><tr><th>Nodo</th><th>UUID</th><th>SEQNO recuperado</th><th>Origen</th></tr></thead><tbody>{% for row in galera_recovery.recovered %}<tr><td>{{ row.host }}</td><td>{{ row.uuid }}</td><td>{{ row.seqno }}</td><td>{{ row.source }}</td></tr>{% endfor %}</tbody></table>{% endif %}
 </section>
 
