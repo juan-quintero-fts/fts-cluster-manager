@@ -6,7 +6,9 @@ from urllib.parse import urlencode
 import markdown
 import re
 
-from .core import settings, inspect_node, classify, recover_position, service_action, bootstrap, promote_single_nonprimary, SSHAuthenticationError
+from .core import (settings, inspect_node, classify, recover_position, service_action, bootstrap,
+                   promote_single_nonprimary, recover_mariadb_process, read_grastate,
+                   galera_recommendation, SSHAuthenticationError, SSHError)
 from .audit import log, recent, init_db
 from .mongo_core import (mongo_settings, mongo_status, start_mongod, controlled_stepdown,
                          set_majority_write_concern, MongoError, MongoSSHAuthenticationError)
@@ -72,7 +74,24 @@ def get_pacemaker_state():
         }
 
 
-def dashboard_context(request: Request, positions=None, best=None, uuid_warning=False, feedback=None):
+def galera_recovery_state(nodes, recovered=None):
+    rows = []
+    for node in nodes:
+        row = {'host': node['host'], 'mariadb': node['mariadb'], 'active_state': node['active_state'],
+               'sub_state': node['sub_state'], 'uuid': 'N/A', 'seqno': 'N/A', 'safe_to_bootstrap': 'N/A', 'error': ''}
+        if node['ssh']:
+            try:
+                row.update(read_grastate(node['host']))
+            except Exception as exc:
+                row['error'] = str(exc)
+        else:
+            row['error'] = 'Nodo no accesible por SSH; no fue posible leer grastate.dat.'
+        rows.append(row)
+    recommendation = galera_recommendation(rows, recovered)
+    return {'nodes': rows, 'recommendation': recommendation, 'recovered': recovered}
+
+
+def dashboard_context(request: Request, positions=None, best=None, uuid_warning=False, feedback=None, recovery=None):
     nodes, level, summary = get_cluster_state()
     ssh_up = [n for n in nodes if n['ssh']]
     maria_up = [n for n in nodes if n['mariadb'] == 'active']
@@ -101,6 +120,7 @@ def dashboard_context(request: Request, positions=None, best=None, uuid_warning=
         best=best,
         uuid_warning=uuid_warning,
         feedback=feedback, mongo=get_mongo_state(), pacemaker=get_pacemaker_state(),
+        galera_recovery=recovery or galera_recovery_state(nodes, positions),
     )
 
 
@@ -255,9 +275,9 @@ def analyze_recovery(request: Request, root_password: str = Form(...)):
     nodes, _, _ = get_cluster_state()
     positions = []
 
-    # El diagnóstico sólo aplica a nodos accesibles con MariaDB detenido.
+    # Se analiza cada nodo detenido correctamente; no depende de otros nodos.
     for n in nodes:
-        if n['ssh'] and n['mariadb'] in ('inactive', 'failed'):
+        if n['ssh'] and n['active_state'] == 'inactive' and n['sub_state'] == 'dead' and not n['mariadbd_processes']:
             try:
                 positions.append(recover_position(n['host'], root_password))
             except SSHAuthenticationError:
@@ -271,10 +291,7 @@ def analyze_recovery(request: Request, root_password: str = Form(...)):
                     'seqno': 'N/A', 'source': str(e)
                 })
 
-    numeric = [
-        p for p in positions
-        if str(p['seqno']).lstrip('-').isdigit() and int(p['seqno']) >= 0
-    ]
+    numeric = [p for p in positions if str(p['seqno']).lstrip('-').isdigit() and int(p['seqno']) >= 0]
     best = max([int(p['seqno']) for p in numeric], default=None)
     uuids = sorted({p['uuid'] for p in numeric if p['uuid'] != 'N/A'})
     uuid_warning = len(uuids) > 1
@@ -285,9 +302,30 @@ def analyze_recovery(request: Request, root_password: str = Form(...)):
             request,
             positions=positions,
             best=best,
-            uuid_warning=uuid_warning,
+            uuid_warning=uuid_warning, recovery=galera_recovery_state(nodes, positions),
         ),
     )
+
+
+@app.post('/node/{host}/process-recovery', response_class=HTMLResponse)
+def process_recovery(host: str, request: Request, confirm: str = Form(...), actor: str = Form('web'), root_password: str = Form(...)):
+    if host not in settings.nodes:
+        raise HTTPException(404)
+    if confirm != 'FORZAR RECUPERACION':
+        raise HTTPException(400, 'Debe escribir FORZAR RECUPERACION.')
+    current = inspect_node(host)
+    if not current['ssh'] or current['process_recovery'] not in {'recover-process', 'reset-failed'}:
+        raise HTTPException(409, 'El nodo ya no cumple las condiciones para recuperar el proceso.')
+    try:
+        ok, detail, _ = recover_mariadb_process(host, root_password)
+    except SSHAuthenticationError:
+        log(actor, host, 'mariadb:recover-process', False, 'Autenticación SSH rechazada.')
+        raise HTTPException(401, 'Autenticación SSH rechazada.')
+    except SSHError as exc:
+        log(actor, host, 'mariadb:recover-process', False, str(exc))
+        raise HTTPException(400, str(exc))
+    log(actor, host, 'mariadb:recover-process', ok, detail)
+    return templates.TemplateResponse('dashboard.html', dashboard_context(request, feedback={'event': 'recover-process', 'host': host, 'ok': ok}))
 
 
 @app.post('/node/{host}/service')

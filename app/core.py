@@ -117,7 +117,9 @@ def inspect_node(host: str):
         'host': host, 'ssh': False, 'mariadb': 'unknown', 'cluster': 'N/A', 'ready': 'N/A',
         'local_state': 'N/A', 'size': 'N/A', 'connected': 'N/A', 'wsrep_local_index': 'N/A',
         'flow_control_paused': 'N/A', 'recv_queue': 'N/A', 'send_queue': 'N/A', 'error': '',
-        'syncing': False, 'last_seen': time.strftime('%Y-%m-%d %H:%M:%S')
+        'syncing': False, 'last_seen': time.strftime('%Y-%m-%d %H:%M:%S'),
+        'active_state': 'unknown', 'sub_state': 'unknown', 'main_pid': '0', 'result': 'unknown',
+        'mariadbd_processes': [], 'process_recovery': 'none', 'process_recovery_reason': '',
     }
     row['ssh'] = tcp_reachable(host, settings.ssh_port)
     if not row['ssh']:
@@ -125,10 +127,20 @@ def inspect_node(host: str):
         return row
     try:
         with Remote(host) as r:
-            _, state, _ = r.run('systemctl is-active mariadb 2>/dev/null || true')
-            row['mariadb'] = state or 'unknown'
-            row['syncing'] = state in ('activating', 'reloading')
-            if state != 'active':
+            _, service, _ = r.run('systemctl show mariadb -p ActiveState -p SubState -p MainPID -p Result 2>/dev/null || true')
+            _, processes, _ = r.run('pgrep -a mariadbd 2>/dev/null || true')
+            values = dict(line.split('=', 1) for line in service.splitlines() if '=' in line)
+            row.update({
+                'active_state': values.get('ActiveState', 'unknown'),
+                'sub_state': values.get('SubState', 'unknown'),
+                'main_pid': values.get('MainPID', '0'),
+                'result': values.get('Result', 'unknown'),
+                'mariadbd_processes': [line for line in processes.splitlines() if line],
+            })
+            row['mariadb'] = row['active_state']
+            row['syncing'] = row['active_state'] in ('activating', 'reloading')
+            row['process_recovery'], row['process_recovery_reason'] = process_recovery_state(row)
+            if row['active_state'] != 'active' or row['sub_state'] != 'running' or not row['mariadbd_processes']:
                 return row
             sql = "SHOW GLOBAL STATUS WHERE Variable_name IN ('wsrep_cluster_status','wsrep_ready','wsrep_local_state_comment','wsrep_cluster_size','wsrep_connected','wsrep_local_index','wsrep_flow_control_paused','wsrep_local_recv_queue','wsrep_local_send_queue');"
             code, out, err = r.run(mysql_command(sql))
@@ -164,6 +176,84 @@ def inspect_node(host: str):
     except Exception as e:
         row['error'] = str(e)
     return row
+
+
+def process_recovery_state(node):
+    """Classify one node only; this never uses elapsed time or other nodes."""
+    active, substate = node.get('active_state'), node.get('sub_state')
+    alive = bool(node.get('mariadbd_processes'))
+    if active == 'failed' and not alive:
+        return 'reset-failed', 'MariaDB falló, pero no quedan procesos mariadbd.'
+    if alive and (active in {'activating', 'deactivating'} or substate in {'stop', 'stopping'} or active == 'failed'):
+        return 'recover-process', f'MariaDB bloqueado: {active}/{substate} con mariadbd activo.'
+    return 'none', ''
+
+
+def read_grastate(host: str):
+    """Read-only grastate inspection with the configured monitoring SSH account."""
+    g = shlex.quote(settings.grastate)
+    command = f"test -f {g} && awk -F': *' '/^(uuid|seqno|safe_to_bootstrap):/ {{print $1 \"=\" $2}}' {g} || true"
+    with Remote(host) as r:
+        _, out, err = r.run(command)
+    values = dict(line.split('=', 1) for line in out.splitlines() if '=' in line)
+    return {
+        'uuid': values.get('uuid', 'N/A'), 'seqno': values.get('seqno', 'N/A'),
+        'safe_to_bootstrap': values.get('safe_to_bootstrap', 'N/A'), 'error': err or '',
+    }
+
+
+def recover_mariadb_process(host: str, root_password: str):
+    """Kill only a still-live stuck mariadbd, reset systemd, never start MariaDB."""
+    with root_remote(host, root_password) as remote:
+        before = inspect_mariadb_process(remote)
+        state, _ = process_recovery_state(before)
+        if state == 'recover-process':
+            remote.run('systemctl kill --kill-whom=all --signal=SIGKILL mariadb', timeout=30)
+        _, processes, _ = remote.run('pgrep -a mariadbd 2>/dev/null || true')
+        if processes.strip():
+            return False, 'mariadbd continúa activo; no se limpió el estado systemd.', inspect_mariadb_process(remote)
+        remote.run('systemctl reset-failed mariadb', timeout=30)
+        after = inspect_mariadb_process(remote)
+    ok = after['active_state'] == 'inactive' and after['sub_state'] == 'dead' and not after['mariadbd_processes']
+    return ok, 'Proceso recuperado; MariaDB no fue iniciado.' if ok else 'El estado final no es inactive/dead.', after
+
+
+def inspect_mariadb_process(remote):
+    _, service, _ = remote.run('systemctl show mariadb -p ActiveState -p SubState -p MainPID -p Result 2>/dev/null || true')
+    _, processes, _ = remote.run('pgrep -a mariadbd 2>/dev/null || true')
+    values = dict(line.split('=', 1) for line in service.splitlines() if '=' in line)
+    row = {'active_state': values.get('ActiveState', 'unknown'), 'sub_state': values.get('SubState', 'unknown'),
+           'main_pid': values.get('MainPID', '0'), 'result': values.get('Result', 'unknown'),
+           'mariadbd_processes': [line for line in processes.splitlines() if line]}
+    row['process_recovery'], row['process_recovery_reason'] = process_recovery_state(row)
+    return row
+
+
+def galera_recommendation(rows, recovered=None):
+    """Return a recommendation only when history is unambiguous; never bootstraps."""
+    source = recovered or rows
+    usable = [row for row in source if str(row.get('seqno')) != '-1' and str(row.get('seqno')).lstrip('-').isdigit()]
+    # A seqno=-1 is not a usable position, but its UUID is still evidence of a
+    # different Galera history and must prevent an automatic recommendation.
+    uuids = {row.get('uuid') for row in source if row.get('uuid') not in {'N/A', '', None}}
+    safe = [row for row in rows if str(row.get('safe_to_bootstrap')) == '1']
+    if len(safe) > 1:
+        return {'host': None, 'reason': 'Múltiples nodos con safe_to_bootstrap=1; revise posiciones.', 'warning': 'multiple-safe'}
+    if len(uuids) > 1:
+        return {'host': None, 'reason': 'Se detectaron historiales Galera diferentes.', 'warning': 'uuid-mismatch'}
+    if len(safe) == 1:
+        row = safe[0]
+        newest = max(usable, key=lambda item: int(item['seqno']), default=None)
+        reason = 'Galera marcó este nodo como safe_to_bootstrap=1.'
+        if newest and newest.get('host') == row.get('host'):
+            reason += ' Además posee la posición más reciente conocida.'
+        return {'host': row.get('host'), 'reason': reason, 'warning': ''}
+    if recovered:
+        if not usable:
+            return {'host': None, 'reason': 'No hay posiciones recuperadas válidas.', 'warning': 'no-position'}
+        best = max(usable, key=lambda item: int(item['seqno']))
+        return {'host': best['host'], 'reason': 'Tiene la posición recuperada con SEQNO más alto.', 'warning': ''}
+    return {'host': None, 'reason': 'Se requiere recuperación de posición Galera.', 'warning': 'needs-position'}
 
 
 def classify(nodes):

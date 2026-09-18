@@ -36,6 +36,9 @@
   {% elif feedback.event == 'start' %}
     <strong>{{ 'Solicitud de inicio enviada.' if feedback.ok else 'No fue posible solicitar el inicio del nodo.' }}</strong>
     <p>Nodo: <code>{{ feedback.host }}</code>. El indicador permanecerá en <strong>Sincronizando</strong> hasta que Galera confirme el estado Synced.</p>
+  {% elif feedback.event == 'recover-process' %}
+    <strong>{{ 'Proceso MariaDB recuperado.' if feedback.ok else 'No fue posible recuperar completamente el proceso MariaDB.' }}</strong>
+    <p>Nodo: <code>{{ feedback.host }}</code>. MariaDB no fue iniciado ni se ejecutó bootstrap de Galera.</p>
   {% endif %}
 </section>
 {% endif %}
@@ -105,6 +108,9 @@
   <dl>
     <dt>Interfaz / SSH</dt><dd data-field="ssh">{{ 'Activa' if n.ssh else 'Inactiva' }}</dd>
     <dt>MariaDB</dt><dd data-field="mariadb" class="service-state {{ 'is-active' if n.mariadb == 'active' else 'is-inactive' }}" style="color: {{ 'var(--success)' if n.mariadb == 'active' else 'var(--danger)' }}">{{ n.mariadb }}</dd>
+    <dt>Systemd</dt><dd data-field="systemd">{{ n.active_state }} / {{ n.sub_state }}</dd>
+    <dt>PID / resultado</dt><dd data-field="pid-result">{{ n.main_pid }} / {{ n.result }}</dd>
+    <dt>mariadbd</dt><dd data-field="mariadbd-process">{{ 'Activo' if n.mariadbd_processes else 'No encontrado' }}</dd>
     <dt>Cluster</dt><dd data-field="cluster">{{ n.cluster }}</dd>
     <dt>Ready</dt><dd data-field="ready">{{ n.ready }}</dd>
     <dt>Estado local</dt><dd data-field="local_state">{{ n.local_state }}</dd>
@@ -116,6 +122,19 @@
   <p class="error {% if not n.error %}hidden{% endif %}" data-field="error">{{ n.error }}</p>
 
   <div class="actions">
+    {% if n.ssh and n.process_recovery == 'recover-process' %}
+    <form method="post" action="/node/{{ n.host }}/process-recovery" class="async-dashboard-form" onsubmit="return confirmProcessRecovery('{{ n.host }}', '{{ n.active_state }}', '{{ n.sub_state }}', '{{ n.main_pid }}');">
+      <input type="hidden" name="confirm" value="FORZAR RECUPERACION">
+      <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
+      <button class="danger">Recuperar proceso</button>
+    </form>
+    {% elif n.ssh and n.process_recovery == 'reset-failed' %}
+    <form method="post" action="/node/{{ n.host }}/process-recovery" class="async-dashboard-form" onsubmit="return confirm('Se limpiará únicamente el estado failed de systemd. MariaDB no será iniciado. ¿Continuar?');">
+      <input type="hidden" name="confirm" value="FORZAR RECUPERACION">
+      <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
+      <button class="secondary">Limpiar estado systemd</button>
+    </form>
+    {% endif %}
     {% if can_join_nodes and n.ssh and n.mariadb in ('inactive', 'failed') %}
     <form method="post" action="/node/{{ n.host }}/service" class="start-node-form async-dashboard-form" onsubmit="return confirmStart('{{ n.host }}');">
       <input type="hidden" name="action" value="start">
@@ -128,6 +147,19 @@
 </article>
 {% endfor %}
 </div>
+
+<section class="scenario-box scenario-recovery" id="galera-recovery-analysis">
+  <h2>Recuperación del clúster Galera</h2>
+  <p>Lectura de <code>grastate.dat</code> en todos los nodos configurados. Esta sección no inicia MariaDB ni ejecuta bootstrap automáticamente.</p>
+  <div class="grid">
+  {% for row in galera_recovery.nodes %}
+    {% set recommended = galera_recovery.recommendation.host == row.host %}
+    <article class="card galera-recovery-card {{ 'recommended' if recommended else '' }}"><div class="card-head"><h2>{{ row.host }}</h2><span class="node-status {{ 'primary' if recommended else 'degraded' }}">{{ '★ RECOMENDADO' if recommended else row.mariadb }}</span></div><dl><dt>Estado MariaDB</dt><dd>{{ row.active_state }} / {{ row.sub_state }}</dd><dt>UUID</dt><dd><code>{{ row.uuid }}</code></dd><dt>SEQNO</dt><dd>{{ row.seqno }}</dd><dt>Safe to bootstrap</dt><dd>{{ 'SÍ' if row.safe_to_bootstrap == '1' else ('NO' if row.safe_to_bootstrap == '0' else 'N/A') }}</dd></dl>{% if row.error %}<p class="error">{{ row.error }}</p>{% endif %}</article>
+  {% endfor %}
+  </div>
+  <div class="write-protection"><div><h3>Nodo recomendado para iniciar primero</h3><p><strong>{{ galera_recovery.recommendation.host or 'Sin recomendación automática' }}</strong></p><p>{{ galera_recovery.recommendation.reason }}</p></div><div>{% if galera_recovery.recommendation.warning %}<p class="warning">Revisa las posiciones antes de ejecutar bootstrap.</p>{% endif %}<form method="post" action="/recovery/analyze" class="async-dashboard-form" onsubmit="return confirm('Se ejecutará la recuperación de posición sólo en nodos detenidos correctamente. No se iniciará MariaDB ni se hará bootstrap. ¿Continuar?');"><input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required><button>Analizar posiciones Galera</button></form></div></div>
+  {% if galera_recovery.recovered %}<table class="recovery-table"><thead><tr><th>Nodo</th><th>UUID</th><th>SEQNO recuperado</th><th>Origen</th></tr></thead><tbody>{% for row in galera_recovery.recovered %}<tr><td>{{ row.host }}</td><td>{{ row.uuid }}</td><td>{{ row.seqno }}</td><td>{{ row.source }}</td></tr>{% endfor %}</tbody></table>{% endif %}
+</section>
 
 <section id="recovery-panel" class="recovery-panel">
   <div class="section-title">
@@ -342,6 +374,10 @@ function confirmStart(host) {
   return window.confirm(`¿Está seguro que desea levantar MariaDB en ${host} e intentar incorporarlo al clúster?\n\nDespués del arranque la aplicación validará nuevamente MariaDB, Primary, Ready, Connected, Synced y Cluster Size.`);
 }
 
+function confirmProcessRecovery(host, state, substate, pid) {
+  return window.confirm(`Recuperación forzada de MariaDB\n\nEl proceso MariaDB del nodo está bloqueado en:\nEstado: ${state}\nSubestado: ${substate}\nPID: ${pid}\n\nLa operación ejecutará SIGKILL sobre los procesos pertenecientes al servicio MariaDB y limpiará el estado fallido de systemd.\n\nNo iniciará MariaDB ni realizará automáticamente un bootstrap del clúster Galera.\n\n¿Forzar recuperación en ${host}?`);
+}
+
 function confirmBootstrap(host, seqno, recommended) {
   const note = recommended ? '\n\nEste es el nodo con el SEQNO más alto entre los estados comparables.' : '\n\nATENCIÓN: este nodo NO es el candidato con mayor SEQNO mostrado.';
   return window.confirm(`¿Está seguro que desea dejar ${host} como nuevo Primary?\nSEQNO: ${seqno}${note}\n\nSe modificará safe_to_bootstrap y se ejecutará galera_new_cluster sólo en este nodo.`);
@@ -430,7 +466,7 @@ function applyDashboardDocument(sourceDocument, {updateFeedback = true} = {}) {
   for (const sourceCard of sourceDocument.querySelectorAll('.node-card')) {
     const targetCard = document.querySelector(`.node-card[data-host="${CSS.escape(sourceCard.dataset.host)}"]`);
     if (!targetCard) continue;
-    for (const field of ['ssh', 'mariadb', 'cluster', 'ready', 'local_state', 'size', 'connected', 'flow_control_paused', 'queues', 'status-label']) {
+    for (const field of ['ssh', 'mariadb', 'systemd', 'pid-result', 'mariadbd-process', 'cluster', 'ready', 'local_state', 'size', 'connected', 'flow_control_paused', 'queues', 'status-label']) {
       const source = sourceCard.querySelector(`[data-field="${field}"]`);
       if (source) setText(targetCard, field, source.textContent.trim());
     }
@@ -461,6 +497,11 @@ function applyDashboardDocument(sourceDocument, {updateFeedback = true} = {}) {
   const targetRecovery = document.getElementById('recovery-panel');
   if (sourceRecovery && targetRecovery) {
     targetRecovery.replaceWith(document.importNode(sourceRecovery, true));
+  }
+  const sourceGaleraRecovery = sourceDocument.getElementById('galera-recovery-analysis');
+  const targetGaleraRecovery = document.getElementById('galera-recovery-analysis');
+  if (sourceGaleraRecovery && targetGaleraRecovery) {
+    targetGaleraRecovery.replaceWith(document.importNode(sourceGaleraRecovery, true));
   }
   if (updateFeedback) syncFeedback(sourceDocument);
   currentStructureSignature = structureSignatureFromDocument(document);
