@@ -23,8 +23,15 @@ class PacemakerParsingTests(unittest.TestCase):
         state = pacemaker_core._parse_pcs_status('''Current DC: SERVER1 (version 2.0) - partition with quorum\nOnline: [ SERVER1 SERVER2 ]\n  * vip: Started SERVER2\n''')
         self.assertEqual(state['dc'], 'SERVER1')
         self.assertEqual(state['online'], ['SERVER1', 'SERVER2'])
-        self.assertEqual(state['resources'], [{'resource': 'vip', 'node': 'SERVER2'}])
+        self.assertEqual(state['resources'], [{'resource': 'vip', 'status': 'Started', 'node': 'SERVER2'}])
         self.assertEqual(state['resource_owner'], 'SERVER2')
+
+    def test_parses_stopped_and_failed_resource_states(self):
+        state = pacemaker_core._parse_pcs_status('''  * vip: Stopped\n  * app: FAILED SERVER2\n''')
+        self.assertEqual(state['resources'], [
+            {'resource': 'vip', 'status': 'Stopped', 'node': 'N/A'},
+            {'resource': 'app', 'status': 'FAILED', 'node': 'SERVER2'},
+        ])
 
     def test_marks_resources_as_distributed_when_they_are_not_on_one_node(self):
         state = pacemaker_core._parse_pcs_status('''  * vip: Started SERVER1\n  * app: Started SERVER2\n''')

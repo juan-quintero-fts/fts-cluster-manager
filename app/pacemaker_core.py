@@ -68,10 +68,20 @@ def _parse_pcs_status(output: str):
         match = re.search(r'OFFLINE:\s*\[([^\]]*)\]', line, re.I)
         if match:
             offline.extend(match.group(1).split())
-        match = re.search(r'^\s*\*\s+(.+?):\s+(?:Started|Master|Promoted)\s+(.+?)\s*$', line)
+        match = re.search(
+            r'^\s*\*\s+(.+?):\s+(Started|Stopped|FAILED|Failed|Master|Promoted|Unpromoted)(?:\s+(.+?))?\s*$',
+            line,
+        )
         if match:
-            resources.append({'resource': match.group(1).strip(), 'node': match.group(2).strip()})
-    resource_nodes = sorted({resource['node'] for resource in resources})
+            resources.append({
+                'resource': match.group(1).strip(),
+                'status': match.group(2).strip(),
+                'node': match.group(3).strip() if match.group(3) else 'N/A',
+            })
+    resource_nodes = sorted({
+        resource['node'] for resource in resources
+        if resource['node'] != 'N/A' and resource['status'] in {'Started', 'Master', 'Promoted'}
+    })
     if len(resource_nodes) == 1:
         resource_owner = resource_nodes[0]
     elif resource_nodes:
