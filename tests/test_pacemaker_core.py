@@ -25,6 +25,8 @@ class PacemakerParsingTests(unittest.TestCase):
         self.assertEqual(state['online'], ['SERVER1', 'SERVER2'])
         self.assertEqual(state['resources'], [{'resource': 'vip', 'status': 'Started', 'node': 'SERVER2'}])
         self.assertEqual(state['resource_owner'], 'SERVER2')
+        self.assertEqual(state['resource_leader'], 'SERVER2')
+        self.assertEqual(state['resource_leader_count'], 1)
 
     def test_parses_stopped_and_failed_resource_states(self):
         state = pacemaker_core._parse_pcs_status('''  * vip: Stopped\n  * app: FAILED SERVER2\n''')
@@ -36,6 +38,7 @@ class PacemakerParsingTests(unittest.TestCase):
     def test_marks_resources_as_distributed_when_they_are_not_on_one_node(self):
         state = pacemaker_core._parse_pcs_status('''  * vip: Started SERVER1\n  * app: Started SERVER2\n''')
         self.assertEqual(state['resource_owner'], 'Distribuidos')
+        self.assertEqual(state['resource_leader'], 'Empate')
 
     def test_parses_pcs_1_1_resource_and_clone_format(self):
         state = pacemaker_core._parse_pcs_status(''' res_container-maxscale_maxscale_ra (service:container-maxscale): Started ws1\n Clone Set: ping-gateway-clone [ping-gateway]\n     Started: [ ws1 ws2 ]\n VirtualIP (ocf::heartbeat:IPaddr2): Started ws1\n res_fts-cluster-manager (service:fts-cluster-manager): Stopped (disabled)\n''')
@@ -46,6 +49,8 @@ class PacemakerParsingTests(unittest.TestCase):
             {'resource': 'res_fts-cluster-manager (service:fts-cluster-manager)', 'status': 'Stopped', 'node': 'N/A'},
         ])
         self.assertEqual(state['resource_owner'], 'Distribuidos')
+        self.assertEqual(state['resource_leader'], 'ws1')
+        self.assertEqual(state['resource_leader_count'], 3)
 
     def test_parses_quorum_and_qdevice(self):
         quorum = pacemaker_core._parse_quorum('''Nodes: 2\nExpected votes: 3\nTotal votes: 3\nQuorum: 2\nQuorate: Yes\nFlags: Quorate Qdevice\n''')

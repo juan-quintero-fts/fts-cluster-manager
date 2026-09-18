@@ -103,6 +103,17 @@ def _parse_pcs_status(output: str):
         resource_owner = 'Distribuidos'
     else:
         resource_owner = 'N/A'
+    resource_counts = {}
+    for resource in resources:
+        if resource['status'] not in {'Started', 'Master', 'Promoted'}:
+            continue
+        for node in resource['node'].split(','):
+            node = node.strip()
+            if node and node != 'N/A':
+                resource_counts[node] = resource_counts.get(node, 0) + 1
+    highest_count = max(resource_counts.values(), default=0)
+    leaders = sorted(node for node, count in resource_counts.items() if count == highest_count)
+    resource_leader = leaders[0] if len(leaders) == 1 else ('Empate' if leaders else 'N/A')
     return {
         'dc': dc,
         'online': sorted(set(online)),
@@ -110,6 +121,9 @@ def _parse_pcs_status(output: str):
         'resources': resources,
         'resource_owner': resource_owner,
         'resource_nodes': resource_nodes,
+        'resource_leader': resource_leader,
+        'resource_leader_count': highest_count,
+        'resource_counts': resource_counts,
     }
 
 

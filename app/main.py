@@ -61,7 +61,8 @@ def get_pacemaker_state():
             'qnetd': {'name': pacemaker_settings.qnetd_name, 'host': pacemaker_settings.qnetd_host,
                       'ssh': False, 'qnetd': 'unknown', 'pcsd': 'unknown', 'error': str(exc)},
             'details': {
-                'pcs': {'dc': 'N/A', 'resources': [], 'resource_owner': 'N/A', 'resource_nodes': []},
+                'pcs': {'dc': 'N/A', 'resources': [], 'resource_owner': 'N/A', 'resource_nodes': [],
+                        'resource_leader': 'N/A', 'resource_leader_count': 0, 'resource_counts': {}},
                 'quorum': {'quorate': 'N/A', 'total_votes': 'N/A', 'quorum': 'N/A'},
                 'qdevice': {'state': 'N/A', 'host': 'N/A', 'algorithm': 'N/A'},
                 'device_votes': 'N/A',
