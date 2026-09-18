@@ -83,6 +83,125 @@ EOF
   fi
 }
 
+valid_remote_host(){
+  [[ "$1" =~ ^[a-zA-Z0-9][a-zA-Z0-9._:-]*$ ]]
+}
+
+valid_remote_user(){
+  [[ "$1" =~ ^[a-zA-Z_][a-zA-Z0-9_-]*$ ]]
+}
+
+valid_remote_dir(){
+  [[ "$1" =~ ^/[a-zA-Z0-9._/-]+$ && "$1" != *".."* ]]
+}
+
+secondary_preflight(){
+  local target="$1"
+  ssh "$target" "
+    set -e
+    command -v '$engine' >/dev/null 2>&1 || { echo 'ERROR: $engine no esta instalado o el usuario no tiene acceso.'; exit 1; }
+    if '$engine' container inspect '$APP_NAME' >/dev/null 2>&1; then
+      running=\$('${engine}' inspect -f '{{.State.Running}}' '$APP_NAME')
+      if [ \"\$running\" = true ]; then
+        echo 'ERROR: el contenedor $APP_NAME esta activo en el secundario. HA debe detenerlo antes de actualizarlo.'
+        exit 2
+      fi
+    fi
+  "
+}
+
+deploy_secondary(){
+  local secondary_host secondary_user secondary_dir target
+  read -r -p "IP o hostname de SERVER2: " secondary_host
+  if ! valid_remote_host "$secondary_host"; then
+    say "ERROR: IP o hostname de SERVER2 no valido."
+    return 1
+  fi
+  read -r -p "Usuario SSH de SERVER2 [${USER}]: " secondary_user
+  secondary_user="${secondary_user:-$USER}"
+  if ! valid_remote_user "$secondary_user"; then
+    say "ERROR: usuario SSH no valido."
+    return 1
+  fi
+  read -r -p "Directorio de FTS Cluster Manager en SERVER2 [/opt/${APP_NAME}]: " secondary_dir
+  secondary_dir="${secondary_dir:-/opt/${APP_NAME}}"
+  if ! valid_remote_dir "$secondary_dir"; then
+    say "ERROR: el directorio remoto debe ser una ruta absoluta segura."
+    return 1
+  fi
+  target="${secondary_user}@${secondary_host}"
+
+  command -v ssh >/dev/null 2>&1 || { say "ERROR: ssh no esta instalado localmente."; return 1; }
+  command -v tar >/dev/null 2>&1 || { say "ERROR: tar no esta instalado localmente."; return 1; }
+
+  say "Verificando que $APP_NAME este detenido en SERVER2..."
+  if ! secondary_preflight "$target"; then
+    say "No se modifico SERVER2. Detenga el recurso desde HA antes de reintentar."
+    return 1
+  fi
+
+  say "Copiando la version actual a SERVER2 sin sobrescribir .env, data ni secrets..."
+  tar -czf - \
+    --exclude=.git --exclude=.env --exclude=data --exclude=secrets --exclude=__pycache__ \
+    --exclude='*.pyc' --exclude=graphify-out . | \
+    ssh "$target" "mkdir -p '$secondary_dir' && tar -xzf - -C '$secondary_dir'"
+
+  say "Construyendo la imagen y preparando el contenedor detenido en SERVER2..."
+  ssh "$target" bash -s -- "$secondary_dir" "$engine" "$APP_NAME" "$IMAGE_NAME" "$APP_PORT" <<'REMOTE_SCRIPT'
+set -euo pipefail
+remote_dir="$1"
+remote_engine="$2"
+remote_app="$3"
+remote_image="$4"
+remote_port="$5"
+cd "$remote_dir"
+
+mkdir -p data secrets docs
+chmod 700 secrets
+if [[ ! -f .env ]]; then
+  cp .env.example .env
+  echo "SERVER2: se creo .env desde .env.example; revise sus valores antes de un failover."
+fi
+
+"$remote_engine" build --pull=true -t "$remote_image" .
+
+if "$remote_engine" container inspect "$remote_app" >/dev/null 2>&1; then
+  running="$("$remote_engine" inspect -f '{{.State.Running}}' "$remote_app")"
+  if [[ "$running" == "true" ]]; then
+    echo "ERROR: el contenedor se activo durante la preparacion; no se reemplaza."
+    exit 2
+  fi
+  "$remote_engine" rm "$remote_app"
+fi
+
+volumes=( -v "${remote_dir}/data:/app/data" -v "${remote_dir}/docs:/app/docs:ro" )
+if [[ -f "${remote_dir}/secrets/id_rsa" ]]; then
+  volumes+=( -v "${remote_dir}/secrets/id_rsa:/run/secrets/ssh_key:ro" )
+fi
+if [[ "$remote_engine" == "podman" ]]; then
+  volumes=( -v "${remote_dir}/data:/app/data:Z" -v "${remote_dir}/docs:/app/docs:ro,Z" )
+  if [[ -f "${remote_dir}/secrets/id_rsa" ]]; then
+    volumes+=( -v "${remote_dir}/secrets/id_rsa:/run/secrets/ssh_key:ro,Z" )
+  fi
+fi
+
+"$remote_engine" create \
+  --name "$remote_app" \
+  --restart=no \
+  -p "${remote_port}:8080" \
+  --env-file .env \
+  "${volumes[@]}" \
+  "$remote_image" >/dev/null
+
+state="$("$remote_engine" inspect -f '{{.State.Running}}' "$remote_app")"
+if [[ "$state" != "false" ]]; then
+  echo "ERROR: el contenedor no quedo detenido; revise SERVER2."
+  exit 1
+fi
+echo "SERVER2 preparado: imagen $remote_image y contenedor $remote_app detenido. HA conserva el control de inicio."
+REMOTE_SCRIPT
+}
+
 say "==============================================="
 say "       INSTALADOR FTS CLUSTER MANAGER"
 say "==============================================="
@@ -226,6 +345,10 @@ fi
 
 if ask_yn "Desea generar la unidad systemd para FTS Cluster Manager"; then
   install_systemd_unit
+fi
+
+if ask_yn "Desea preparar o actualizar FTS Cluster Manager en SERVER2 (sin activarlo)"; then
+  deploy_secondary
 fi
 
 server_ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"

@@ -30,6 +30,12 @@ bash install.sh
 
 El instalador usa Podman puro (`podman build` y `podman run`) y `vim` para editar `.env`.
 
+### Preparar o actualizar SERVER2 para HA
+
+Al finalizar la instalación, el script ofrece preparar o actualizar `SERVER2`. Solicita su IP/hostname, usuario SSH y directorio remoto. Antes de copiar, verifica que el contenedor del secundario esté detenido; si HA lo tiene activo, cancela sin modificarlo.
+
+El proceso copia el código sin sobrescribir `.env`, `data` ni `secrets`, construye la imagen en SERVER2 y recrea el contenedor **detenido**. No ejecuta `start` ni `enable`: Pacemaker/HA conserva el control del failover. El usuario SSH debe tener acceso al motor seleccionado (Docker o Podman) y permisos de escritura sobre el directorio remoto.
+
 ## Credenciales
 
 - SSH de monitoreo: `ftsuser` + llave privada.

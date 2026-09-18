@@ -14,6 +14,12 @@ La vista diferencia el **DC de Pacemaker** del nodo donde se ejecuta cada recurs
 
 El usuario SSH de monitoreo debe poder ejecutar esas consultas sin interacción; si `pcs` restringe la lectura por permisos, la vista conserva el estado de los servicios y muestra el error de consulta sin intentar elevar privilegios.
 
+## Actualización del secundario HA
+
+El instalador puede preparar o actualizar SERVER2 sin activarlo. Pide la IP o hostname, el usuario SSH y el directorio remoto. Antes de transferir la versión comprueba que el contenedor `fts-cluster-manager` no esté ejecutándose; si está activo, cancela para que el recurso sea detenido por HA antes de actualizar.
+
+La transferencia conserva `.env`, `data` y `secrets` de SERVER2. Después construye la imagen y recrea el contenedor en estado **detenido**; no ejecuta `start`, `enable` ni acciones de Pacemaker. El usuario SSH usado para el despliegue debe poder usar Docker o Podman y escribir en el directorio remoto.
+
 Para habilitarla, configure en `.env`:
 
 ```text
