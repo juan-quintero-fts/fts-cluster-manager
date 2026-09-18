@@ -18,7 +18,7 @@ El usuario SSH de monitoreo debe poder ejecutar esas consultas sin interacción;
 
 El instalador puede preparar o actualizar SERVER2 sin activarlo. Pide únicamente la IP o hostname y usa el usuario SSH actual. El proyecto debe estar sincronizado previamente por Syncthing. Antes de actualizar comprueba que el contenedor `fts-cluster-manager` no esté ejecutándose; si está activo, cancela para que el recurso sea detenido por HA antes de actualizar.
 
-No se transfiere el repositorio. El instalador usa `/opt/fts-cluster-manager` en SERVER2, instala Docker o Podman si falta, construye la imagen y recrea el contenedor en estado **detenido**, dejando deshabilitada su unidad systemd. No ejecuta `start`, `enable`, `podman run` ni acciones de Pacemaker.
+No se transfiere el repositorio. El instalador usa `/opt/fts-cluster-manager` en SERVER2, instala Docker o Podman si falta, construye la imagen, recrea el contenedor en estado **detenido** y crea su unidad systemd deshabilitada. No ejecuta `start`, `enable`, `podman run` ni acciones de Pacemaker.
 
 Para habilitarla, configure en `.env`:
 

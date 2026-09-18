@@ -217,7 +217,30 @@ if [[ "$state" != "false" ]]; then
   echo "ERROR: el contenedor no quedo detenido; revise SERVER2."
   exit 1
 fi
-as_root systemctl disable "${remote_app}.service" >/dev/null 2>&1 || true
+engine_path="$(command -v "$remote_engine")"
+unit_file="/tmp/${remote_app}.service"
+cat > "$unit_file" <<UNIT
+[Unit]
+Description=FTS Cluster Manager container
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=${engine_path} start ${remote_app}
+ExecStop=${engine_path} stop --time 30 ${remote_app}
+TimeoutStartSec=60
+TimeoutStopSec=60
+Restart=no
+
+[Install]
+WantedBy=multi-user.target
+UNIT
+as_root install -m 0644 "$unit_file" "/etc/systemd/system/${remote_app}.service"
+rm -f "$unit_file"
+as_root systemctl daemon-reload
+as_root systemctl disable "${remote_app}.service"
 echo "SERVER2 preparado: imagen $remote_image y contenedor $remote_app detenido. HA conserva el control de inicio."
 REMOTE_SCRIPT
 }
