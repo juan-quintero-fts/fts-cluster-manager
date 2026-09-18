@@ -122,13 +122,13 @@
   <p class="error {% if not n.error %}hidden{% endif %}" data-field="error">{{ n.error }}</p>
 
   <div class="actions">
-    {% if n.ssh and n.process_recovery == 'recover-process' %}
+    {% if n.ssh and n.process_recovery == 'recover-process' and not (feedback and feedback.event == 'recover-process' and feedback.ok and feedback.host == n.host) %}
     <form method="post" action="/node/{{ n.host }}/process-recovery" class="async-dashboard-form" onsubmit="return confirmProcessRecovery('{{ n.host }}', '{{ n.active_state }}', '{{ n.sub_state }}', '{{ n.main_pid }}');">
       <input type="hidden" name="confirm" value="FORZAR RECUPERACION">
       <input type="password" name="root_password" placeholder="Contraseña root para detener MariaDB" autocomplete="current-password" required>
       <button class="danger">Recuperar proceso</button>
     </form>
-    {% elif n.ssh and n.process_recovery == 'reset-failed' %}
+    {% elif n.ssh and n.process_recovery == 'reset-failed' and not (feedback and feedback.event == 'recover-process' and feedback.ok and feedback.host == n.host) %}
     <form method="post" action="/node/{{ n.host }}/process-recovery" class="async-dashboard-form" onsubmit="return confirm('Se limpiará únicamente el estado failed de systemd. MariaDB no será iniciado. ¿Continuar?');">
       <input type="hidden" name="confirm" value="FORZAR RECUPERACION">
       <input type="password" name="root_password" placeholder="Contraseña root" autocomplete="current-password" required>
@@ -149,6 +149,7 @@
 </div>
 
 <section class="scenario-box scenario-recovery" id="galera-recovery-analysis">
+  {% set bootstrap_succeeded = feedback and feedback.event == 'bootstrap' and feedback.ok %}
   <h2>Recuperación del clúster Galera</h2>
   <p>Lectura de <code>grastate.dat</code> en todos los nodos configurados. Esta sección no inicia MariaDB ni ejecuta bootstrap automáticamente.</p>
   <div class="grid">
@@ -172,7 +173,7 @@
         <button>Analizar posiciones Galera</button>
       </form>
     </section>
-    {% if galera_recovery.recommendation.host and not galera_recovery.recommendation.warning %}
+    {% if galera_recovery.recommendation.host and not galera_recovery.recommendation.warning and not bootstrap_succeeded %}
     <section class="galera-action bootstrap-action">
       <h3>2. Levantar nuevo Primary</h3>
       <p>Bootstrap manual de <strong>{{ galera_recovery.recommendation.host }}</strong>. Úsalo sólo después de revisar la recomendación.</p>

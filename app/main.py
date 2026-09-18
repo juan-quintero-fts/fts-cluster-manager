@@ -269,6 +269,7 @@ def recovery_redirect():
 def analyze_recovery(request: Request, root_password: str = Form(...)):
     nodes, _, _ = get_cluster_state()
     positions = []
+    authentication_failed_hosts = []
 
     # Se analiza cada nodo detenido correctamente; no depende de otros nodos.
     for n in nodes:
@@ -276,6 +277,7 @@ def analyze_recovery(request: Request, root_password: str = Form(...)):
             try:
                 positions.append(recover_position(n['host'], root_password))
             except SSHAuthenticationError:
+                authentication_failed_hosts.append(n['host'])
                 positions.append({
                     'host': n['host'], 'hostname': 'N/A', 'uuid': 'N/A',
                     'seqno': 'N/A', 'source': 'Autenticación SSH rechazada. Verifica la contraseña de root.'
@@ -291,6 +293,10 @@ def analyze_recovery(request: Request, root_password: str = Form(...)):
         dashboard_context(
             request,
             positions=positions,
+            feedback=(
+                {'event': 'auth_failed', 'host': ', '.join(authentication_failed_hosts), 'ok': False}
+                if authentication_failed_hosts else None
+            ),
             recovery=galera_recovery_state(nodes, positions),
         ),
     )
