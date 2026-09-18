@@ -66,6 +66,7 @@ def get_pacemaker_state():
                 'qdevice': {'state': 'N/A', 'host': 'N/A', 'algorithm': 'N/A'},
                 'device_votes': 'N/A',
                 'no_quorum_policy': 'N/A',
+                'pcs_error': str(exc),
             },
         }
 

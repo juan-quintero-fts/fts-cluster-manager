@@ -154,24 +154,31 @@ def inspect_qnetd():
 
 
 def _cluster_details(nodes):
-    fallback = {'pcs': {}, 'quorum': _parse_quorum(''), 'qdevice': _parse_qdevice(''), 'device_votes': 'N/A', 'no_quorum_policy': 'N/A', 'error': ''}
+    fallback = {'pcs': {}, 'quorum': _parse_quorum(''), 'qdevice': _parse_qdevice(''), 'device_votes': 'N/A', 'no_quorum_policy': 'N/A', 'error': '', 'pcs_error': ''}
     for node in nodes:
         if not node['ssh']:
             continue
         try:
             with Remote(node['host']) as remote:
-                _, pcs, pcs_error = remote.run('pcs status --full 2>&1 || true', timeout=30)
+                # `pcs status` is available in the validated PCS 0.9.169 version.
+                # Some distributions do not accept `--full`, while the standard output
+                # already contains the current DC and the complete resource list.
+                _, pcs, pcs_error = remote.run('pcs status 2>&1 || true', timeout=30)
                 _, quorum, quorum_error = remote.run('pcs quorum status 2>&1 || true', timeout=30)
                 _, qdevice, qdevice_error = remote.run('pcs quorum device status 2>&1 || true', timeout=30)
                 _, votes, _ = remote.run('corosync-cmapctl -g quorum.device.votes 2>&1 || true')
                 _, properties, _ = remote.run('pcs property show 2>&1 || true')
             device_match = re.search(r'quorum\.device\.votes\s*\([^)]*\)\s*=\s*(\S+)', votes)
             policy_match = re.search(r'no-quorum-policy:\s*(\S+)', properties, re.I)
+            pcs_failure = ''
+            if re.search(r'(?:^|\n)(?:Error:|pcs: command not found|Permission denied)', pcs, re.I):
+                pcs_failure = pcs
             return {
                 'pcs': _parse_pcs_status(pcs), 'quorum': _parse_quorum(quorum), 'qdevice': _parse_qdevice(qdevice),
                 'device_votes': device_match.group(1) if device_match else 'N/A',
                 'no_quorum_policy': policy_match.group(1) if policy_match else 'predeterminado',
                 'error': '; '.join(part for part in (pcs_error, quorum_error, qdevice_error) if part),
+                'pcs_error': pcs_failure,
             }
         except Exception as exc:
             fallback['error'] = str(exc)
