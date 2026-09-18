@@ -28,7 +28,7 @@
     <div class="service-overview-head"><span>Pacemaker · Corosync · QDevice</span><strong>{{ pacemaker.level }}</strong></div>
     {% if pacemaker.enabled %}
     <div class="service-overview-value">{{ pacemaker.details.quorum.quorate }} <small>quorum</small></div>
-    <dl><dt>Nodo con más recursos</dt><dd>{{ pacemaker.details.pcs.resource_leader }}</dd><dt>Recursos activos</dt><dd>{{ pacemaker.details.pcs.resource_leader_count }}</dd><dt>DC Pacemaker</dt><dd>{{ pacemaker.details.pcs.dc }}</dd><dt>QDevice</dt><dd>{{ pacemaker.details.qdevice.state }}</dd><dt>QNetd</dt><dd>{{ pacemaker.qnetd.qnetd }}</dd></dl>
+    <dl><dt>Nodo principal</dt><dd>{{ pacemaker.details.pcs.resource_leader }}</dd><dt>Recursos activos</dt><dd>{{ pacemaker.details.pcs.resource_leader_count }}</dd><dt>DC Pacemaker</dt><dd>{{ pacemaker.details.pcs.dc }}</dd><dt>QDevice</dt><dd>{{ pacemaker.details.qdevice.state }}</dd><dt>QNetd</dt><dd>{{ pacemaker.qnetd.qnetd }}</dd></dl>
     <span class="service-overview-link">Ver estado del clúster →</span>
     {% else %}
     <div class="service-overview-value">No habilitado</div><p>Configure <code>PACEMAKER_ENABLED=true</code> para activarlo.</p><span class="service-overview-link">Abrir configuración Pacemaker →</span>
