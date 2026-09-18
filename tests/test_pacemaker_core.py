@@ -37,6 +37,16 @@ class PacemakerParsingTests(unittest.TestCase):
         state = pacemaker_core._parse_pcs_status('''  * vip: Started SERVER1\n  * app: Started SERVER2\n''')
         self.assertEqual(state['resource_owner'], 'Distribuidos')
 
+    def test_parses_pcs_1_1_resource_and_clone_format(self):
+        state = pacemaker_core._parse_pcs_status(''' res_container-maxscale_maxscale_ra (service:container-maxscale): Started ws1\n Clone Set: ping-gateway-clone [ping-gateway]\n     Started: [ ws1 ws2 ]\n VirtualIP (ocf::heartbeat:IPaddr2): Started ws1\n res_fts-cluster-manager (service:fts-cluster-manager): Stopped (disabled)\n''')
+        self.assertEqual(state['resources'], [
+            {'resource': 'res_container-maxscale_maxscale_ra (service:container-maxscale)', 'status': 'Started', 'node': 'ws1'},
+            {'resource': 'ping-gateway-clone', 'status': 'Started', 'node': 'ws1, ws2'},
+            {'resource': 'VirtualIP (ocf::heartbeat:IPaddr2)', 'status': 'Started', 'node': 'ws1'},
+            {'resource': 'res_fts-cluster-manager (service:fts-cluster-manager)', 'status': 'Stopped', 'node': 'N/A'},
+        ])
+        self.assertEqual(state['resource_owner'], 'Distribuidos')
+
     def test_parses_quorum_and_qdevice(self):
         quorum = pacemaker_core._parse_quorum('''Nodes: 2\nExpected votes: 3\nTotal votes: 3\nQuorum: 2\nQuorate: Yes\nFlags: Quorate Qdevice\n''')
         qdevice = pacemaker_core._parse_qdevice('''QNetd host: 172.16.0.9:5403\nAlgorithm: Fifty-Fifty split\nState: Connected\n''')

@@ -58,6 +58,7 @@ def _parse_pcs_status(output: str):
     offline = []
     dc = 'N/A'
     resources = []
+    clone_name = None
     for line in output.splitlines():
         match = re.search(r'Current DC:\s*([^\s(]+)', line, re.I)
         if match:
@@ -68,15 +69,29 @@ def _parse_pcs_status(output: str):
         match = re.search(r'OFFLINE:\s*\[([^\]]*)\]', line, re.I)
         if match:
             offline.extend(match.group(1).split())
+        clone_match = re.search(r'^\s*Clone Set:\s*(.+?)(?:\s+\[[^\]]+\])?\s*$', line, re.I)
+        if clone_match:
+            clone_name = clone_match.group(1).strip()
+            continue
+        clone_started = re.search(r'^\s*Started:\s*\[([^\]]*)\]\s*$', line, re.I)
+        if clone_started and clone_name:
+            resources.append({
+                'resource': clone_name,
+                'status': 'Started',
+                'node': ', '.join(clone_started.group(1).split()) or 'N/A',
+            })
+            clone_name = None
+            continue
         match = re.search(
-            r'^\s*\*\s+(.+?):\s+(Started|Stopped|FAILED|Failed|Master|Promoted|Unpromoted)(?:\s+(.+?))?\s*$',
+            r'^\s*(?:\*\s+)?(.+?)\s*:\s+(Started|Stopped|FAILED|Failed|Master|Promoted|Unpromoted)(?:\s+(.+?))?\s*$',
             line,
         )
         if match:
+            node = match.group(3).strip() if match.group(3) else 'N/A'
             resources.append({
                 'resource': match.group(1).strip(),
                 'status': match.group(2).strip(),
-                'node': match.group(3).strip() if match.group(3) else 'N/A',
+                'node': 'N/A' if node.startswith('(') else node,
             })
     resource_nodes = sorted({
         resource['node'] for resource in resources
