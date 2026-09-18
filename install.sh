@@ -99,7 +99,6 @@ secondary_preflight(){
   local target="$1"
   ssh "$target" "
     set -e
-    command -v '$engine' >/dev/null 2>&1 || { echo 'ERROR: $engine no esta instalado o el usuario no tiene acceso.'; exit 1; }
     if '$engine' container inspect '$APP_NAME' >/dev/null 2>&1; then
       running=\$('${engine}' inspect -f '{{.State.Running}}' '$APP_NAME')
       if [ \"\$running\" = true ]; then
@@ -117,22 +116,11 @@ deploy_secondary(){
     say "ERROR: IP o hostname de SERVER2 no valido."
     return 1
   fi
-  read -r -p "Usuario SSH de SERVER2 [${USER}]: " secondary_user
-  secondary_user="${secondary_user:-$USER}"
-  if ! valid_remote_user "$secondary_user"; then
-    say "ERROR: usuario SSH no valido."
-    return 1
-  fi
-  read -r -p "Directorio de FTS Cluster Manager en SERVER2 [/opt/${APP_NAME}]: " secondary_dir
-  secondary_dir="${secondary_dir:-/opt/${APP_NAME}}"
-  if ! valid_remote_dir "$secondary_dir"; then
-    say "ERROR: el directorio remoto debe ser una ruta absoluta segura."
-    return 1
-  fi
+  secondary_user="${USER:-root}"
+  secondary_dir="/opt/${APP_NAME}"
   target="${secondary_user}@${secondary_host}"
 
   command -v ssh >/dev/null 2>&1 || { say "ERROR: ssh no esta instalado localmente."; return 1; }
-  command -v tar >/dev/null 2>&1 || { say "ERROR: tar no esta instalado localmente."; return 1; }
 
   say "Verificando que $APP_NAME este detenido en SERVER2..."
   if ! secondary_preflight "$target"; then
@@ -140,12 +128,7 @@ deploy_secondary(){
     return 1
   fi
 
-  say "Copiando la version actual a SERVER2 sin sobrescribir .env, data ni secrets..."
-  tar -czf - \
-    --exclude=.git --exclude=.env --exclude=data --exclude=secrets --exclude=__pycache__ \
-    --exclude='*.pyc' --exclude=graphify-out . | \
-    ssh "$target" "mkdir -p '$secondary_dir' && tar -xzf - -C '$secondary_dir'"
-
+  say "Usando el proyecto ya sincronizado por Syncthing en SERVER2..."
   say "Construyendo la imagen y preparando el contenedor detenido en SERVER2..."
   ssh "$target" bash -s -- "$secondary_dir" "$engine" "$APP_NAME" "$IMAGE_NAME" "$APP_PORT" <<'REMOTE_SCRIPT'
 set -euo pipefail
@@ -154,6 +137,42 @@ remote_engine="$2"
 remote_app="$3"
 remote_image="$4"
 remote_port="$5"
+
+as_root(){
+  if [[ "$(id -u)" -eq 0 ]]; then
+    "$@"
+  else
+    sudo "$@"
+  fi
+}
+
+if ! command -v "$remote_engine" >/dev/null 2>&1; then
+  echo "SERVER2: instalando $remote_engine..."
+  if command -v apt-get >/dev/null 2>&1; then
+    as_root apt-get update
+    if [[ "$remote_engine" == "podman" ]]; then
+      as_root apt-get install -y podman
+    else
+      as_root apt-get install -y docker.io
+    fi
+  elif command -v dnf >/dev/null 2>&1; then
+    if [[ "$remote_engine" == "podman" ]]; then
+      as_root dnf install -y podman
+    else
+      as_root dnf install -y docker
+    fi
+  elif command -v yum >/dev/null 2>&1; then
+    if [[ "$remote_engine" == "podman" ]]; then
+      as_root yum install -y podman
+    else
+      as_root yum install -y docker
+    fi
+  else
+    echo "ERROR: no se encontro un gestor de paquetes para instalar $remote_engine en SERVER2."
+    exit 1
+  fi
+fi
+
 cd "$remote_dir"
 
 mkdir -p data secrets docs
@@ -198,6 +217,7 @@ if [[ "$state" != "false" ]]; then
   echo "ERROR: el contenedor no quedo detenido; revise SERVER2."
   exit 1
 fi
+as_root systemctl disable "${remote_app}.service" >/dev/null 2>&1 || true
 echo "SERVER2 preparado: imagen $remote_image y contenedor $remote_app detenido. HA conserva el control de inicio."
 REMOTE_SCRIPT
 }
